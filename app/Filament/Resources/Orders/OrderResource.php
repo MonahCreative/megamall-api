@@ -12,6 +12,7 @@ use App\Support\Money;
 use App\Support\Phone;
 use BackedEnum;
 use Filament\Actions\ActionGroup;
+use Filament\Actions\BulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -24,17 +25,22 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use UnitEnum;
 
 class OrderResource extends Resource
 {
     protected static ?string $model = Order::class;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Sales';
+    protected static string | UnitEnum | null $navigationGroup = 'Orders & POS';
 
     protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedShoppingBag;
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 3;
+
+    protected static ?string $navigationLabel = 'Online orders';
+
+    protected static ?string $modelLabel = 'online order';
 
     protected static ?string $recordTitleAttribute = 'order_number';
 
@@ -54,6 +60,12 @@ class OrderResource extends Resource
     public static function canCreate(): bool
     {
         return false; // orders come from the shop
+    }
+
+    /** Shop-counter sales live under "POS orders". */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('channel', 'online');
     }
 
     public static function infolist(Schema $schema): Schema
@@ -98,7 +110,8 @@ class OrderResource extends Resource
                     ->columnSpan(1)
                     ->schema([
                         TextEntry::make('subtotal')->formatStateUsing(fn ($state) => Money::tzs($state)),
-                        TextEntry::make('delivery_fee')->label('Delivery')->formatStateUsing(fn ($state) => Money::tzs($state)),
+                        TextEntry::make('delivery_fee')->label('Delivery')->formatStateUsing(fn ($state) => Money::tzs($state))
+                            ->visible(fn (Order $record) => $record->delivery_fee > 0), // only older orders charged delivery
                         TextEntry::make('total')->formatStateUsing(fn ($state) => Money::tzs($state))->weight('bold')->size('lg'),
                     ]),
                 Section::make('Items')
@@ -173,6 +186,16 @@ class OrderResource extends Resource
             ->recordActions([
                 ViewAction::make(),
                 ActionGroup::make(OrderActions::all()),
+            ])
+            ->toolbarActions([
+                BulkAction::make('printPackingSlips')
+                    ->label('Print packing slips')
+                    ->icon(Heroicon::OutlinedPrinter)
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function (Collection $records, $livewire) {
+                        $url = route('print.packing-slips', ['orders' => $records->pluck('id')->implode(',')]);
+                        $livewire->js('window.open('.json_encode($url).", '_blank')");
+                    }),
             ]);
     }
 

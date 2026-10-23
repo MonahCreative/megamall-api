@@ -13,10 +13,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Order extends Model
 {
     protected $fillable = [
-        'order_number', 'access_token', 'user_id', 'customer_name', 'phone', 'email',
+        'order_number', 'access_token', 'channel', 'user_id', 'served_by', 'customer_name', 'phone', 'email',
         'region_id', 'district_id', 'area', 'address', 'notes',
         'payment_mode', 'payment_status', 'status',
-        'subtotal', 'delivery_fee', 'total', 'paid_at', 'expires_at', 'tracking_note',
+        'subtotal', 'delivery_fee', 'discount', 'total', 'paid_at', 'delivered_at', 'expires_at', 'tracking_note',
     ];
 
     protected $hidden = ['access_token'];
@@ -29,8 +29,10 @@ class Order extends Model
             'status' => OrderStatus::class,
             'subtotal' => 'integer',
             'delivery_fee' => 'integer',
+            'discount' => 'integer',
             'total' => 'integer',
             'paid_at' => 'datetime',
+            'delivered_at' => 'datetime',
             'expires_at' => 'datetime',
         ];
     }
@@ -50,6 +52,41 @@ class Order extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function servedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'served_by');
+    }
+
+    public function returnRequests(): HasMany
+    {
+        return $this->hasMany(ReturnRequest::class);
+    }
+
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(Refund::class);
+    }
+
+    public function scopeOnline(Builder $query): void
+    {
+        $query->where('channel', 'online');
+    }
+
+    public function scopePos(Builder $query): void
+    {
+        $query->where('channel', 'pos');
+    }
+
+    public function isPos(): bool
+    {
+        return $this->channel === 'pos';
+    }
+
+    public function refundedAmount(): int
+    {
+        return (int) $this->refunds()->sum('amount');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
@@ -63,7 +100,8 @@ class Order extends Model
     /** Orders staff must act on: new COD orders to confirm, and confirmed/paid orders to pack and send. */
     public function scopeNeedsAction(Builder $query): void
     {
-        $query->whereIn('status', [OrderStatus::Pending, OrderStatus::Confirmed, OrderStatus::Processing]);
+        $query->where('channel', 'online')
+            ->whereIn('status', [OrderStatus::Pending, OrderStatus::Confirmed, OrderStatus::Processing]);
     }
 
     public function isPaid(): bool

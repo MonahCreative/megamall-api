@@ -31,7 +31,7 @@ class BannerResource extends Resource
 
     protected static ?string $navigationLabel = 'Home page slider';
 
-    protected static string | UnitEnum | null $navigationGroup = 'Catalogue';
+    protected static string | UnitEnum | null $navigationGroup = 'Promo';
 
     protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedPhoto;
 

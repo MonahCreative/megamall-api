@@ -2,7 +2,12 @@
 
 namespace App\Filament\Resources\Orders;
 
+use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
+use App\Enums\ReturnStatus;
+use App\Filament\Resources\Returns\ReturnActions;
+use App\Filament\Support\Attempt;
+use App\Services\ReturnService;
 use App\Models\Order;
 use App\Services\OrderWorkflow;
 use App\Support\Money;
@@ -31,8 +36,85 @@ class OrderActions
             static::deliver(),
             static::recordPayment(),
             static::whatsapp(),
+            static::printInvoice(),
+            static::printPackingSlip(),
+            static::startReturn(),
+            static::refundCancelled(),
             static::cancel(),
         ];
+    }
+
+    /** A4 invoice (or receipt once paid), to print or save as PDF. */
+    public static function printInvoice(): Action
+    {
+        return Action::make('printInvoice')
+            ->label('Invoice')
+            ->icon(Heroicon::OutlinedDocumentText)
+            ->color('gray')
+            ->url(fn (Order $record) => route('print.invoice', $record))
+            ->openUrlInNewTab();
+    }
+
+    /** Delivery label to stick on the parcel: customer, phone, address, amount to collect, items. */
+    public static function printPackingSlip(): Action
+    {
+        return Action::make('printPackingSlip')
+            ->label('Packing slip')
+            ->icon(Heroicon::OutlinedPrinter)
+            ->color('gray')
+            ->visible(fn (Order $record) => $record->status !== OrderStatus::Cancelled)
+            ->url(fn (Order $record) => route('print.packing-slip', $record))
+            ->openUrlInNewTab();
+    }
+
+    /** Staff create a return for a delivered order (e.g. the customer phoned or came to the shop). */
+    public static function startReturn(): Action
+    {
+        return Action::make('startReturn')
+            ->label('Start a return')
+            ->icon(Heroicon::OutlinedArrowUturnLeft)
+            ->color('gray')
+            ->visible(fn (Order $record) => $record->status === OrderStatus::Delivered)
+            ->modalDescription('Enter how many of each item the customer is returning.')
+            ->schema(fn (Order $record) => [
+                ...$record->items->map(fn ($item) => TextInput::make("qty_{$item->id}")
+                    ->label($item->product_name.($item->variant_name ? " ({$item->variant_name})" : '')." · bought {$item->quantity}")
+                    ->numeric()
+                    ->minValue(0)
+                    ->maxValue(max(0, $item->quantity - $item->returnedQuantity()))
+                    ->default(0))->all(),
+                Select::make('reason')->options(ReturnStatus::reasons())->required(),
+                Textarea::make('details')->rows(2),
+            ])
+            ->action(function (Order $record, array $data, Action $action) {
+                Attempt::run($action, function () use ($record, $data) {
+                    $items = $record->items->map(fn ($item) => ['order_item_id' => $item->id, 'quantity' => (int) ($data["qty_{$item->id}"] ?? 0)])->all();
+                    $return = app(ReturnService::class)->request($record, $items, $data['reason'], $data['details'] ?? null, byStaff: true);
+                    Notification::make()->success()->title("Return {$return->return_number} created")->send();
+                });
+            });
+    }
+
+    /** Give money back for a paid order that was cancelled. */
+    public static function refundCancelled(): Action
+    {
+        return Action::make('refundCancelled')
+            ->label('Refund customer')
+            ->icon(Heroicon::OutlinedBanknotes)
+            ->color('danger')
+            ->visible(fn (Order $record) => $record->status === OrderStatus::Cancelled && $record->isPaid())
+            ->fillForm(fn (Order $record) => ['amount' => $record->total - $record->refundedAmount(), 'method' => 'mpesa'])
+            ->schema([
+                TextInput::make('amount')->prefix('TZS')->numeric()->minValue(1)->required(),
+                Select::make('method')->label('Paid back with')->options(ReturnActions::refundMethods())->required(),
+                TextInput::make('reference')->label('Transaction ID'),
+            ])
+            ->action(function (Order $record, array $data, Action $action) {
+                Attempt::run($action, function () use ($record, $data) {
+                    app(ReturnService::class)->refundOrder($record, (int) $data['amount'], $data['method'], $data['reference'] ?? null, 'Order cancelled');
+                    Notification::make()->success()->title('Refund recorded')->send();
+                });
+            });
     }
 
     public static function confirm(): Action
@@ -149,7 +231,7 @@ class OrderActions
             ->visible(fn (Order $record) => app(OrderWorkflow::class)->canCancel($record))
             ->requiresConfirmation()
             ->modalDescription(fn (Order $record) => $record->isPaid()
-                ? 'This order is PAID. Cancelling puts the items back in stock, but you must refund the customer yourself.'
+                ? 'This order is PAID. Cancelling puts the items back in stock. Then use "Refund customer" to record the money you send back.'
                 : 'The items go back into stock.')
             ->schema([
                 TextInput::make('reason')->label('Reason')->required()->placeholder('Customer changed their mind'),

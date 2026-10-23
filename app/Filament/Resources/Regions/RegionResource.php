@@ -6,7 +6,6 @@ use App\Enums\PaymentMode;
 use App\Filament\Resources\Regions\Pages\EditRegion;
 use App\Filament\Resources\Regions\Pages\ListRegions;
 use App\Models\Region;
-use App\Support\Money;
 use BackedEnum;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Radio;
@@ -49,7 +48,10 @@ class RegionResource extends Resource
                             ->inline(false),
                         Radio::make('payment_mode')
                             ->label('How customers in this region pay')
-                            ->options(PaymentMode::class)
+                            ->options([
+                                PaymentMode::CashOnDelivery->value => PaymentMode::CashOnDelivery->getLabel(),
+                                PaymentMode::Prepaid->value => PaymentMode::Prepaid->getLabel(),
+                            ])
                             ->descriptions([
                                 PaymentMode::CashOnDelivery->value => 'Customer pays the rider after checking the item.',
                                 PaymentMode::Prepaid->value => 'Customer must pay by mobile money before we dispatch.',
@@ -57,16 +59,11 @@ class RegionResource extends Resource
                             ->required()
                             ->columnSpanFull(),
                     ]),
-                Section::make('Delivery')
-                    ->columns(3)
+                Section::make('Delivery time')
+                    ->description('Shown to customers at checkout. The delivery cost itself is paid by the customer to the rider or bus company.')
+                    ->columns(2)
                     ->columnSpanFull()
                     ->schema([
-                        TextInput::make('delivery_fee')
-                            ->label('Delivery fee')
-                            ->prefix('TZS')
-                            ->numeric()
-                            ->minValue(0)
-                            ->required(),
                         TextInput::make('delivery_days_min')
                             ->label('Fastest delivery (days)')
                             ->numeric()
@@ -79,7 +76,7 @@ class RegionResource extends Resource
                             ->required(),
                     ]),
                 Section::make('Districts')
-                    ->description('Optional. Add districts if fees differ inside this region. When districts exist, customers must pick one at checkout.')
+                    ->description('Optional. When districts exist, customers must pick one at checkout, which helps riders plan routes.')
                     ->columnSpanFull()
                     ->collapsible()
                     ->schema([
@@ -89,12 +86,8 @@ class RegionResource extends Resource
                             ->addActionLabel('Add district')
                             ->itemLabel(fn (array $state): ?string => $state['name'] ?? null)
                             ->schema([
-                                Grid::make(3)->schema([
+                                Grid::make(2)->schema([
                                     TextInput::make('name')->required(),
-                                    TextInput::make('delivery_fee')
-                                        ->label('Fee (empty = region fee)')
-                                        ->prefix('TZS')
-                                        ->numeric(),
                                     Toggle::make('is_active')->label('Deliver here')->default(true)->inline(false),
                                 ]),
                             ]),
@@ -111,10 +104,6 @@ class RegionResource extends Resource
             ->columns([
                 TextColumn::make('name')->searchable()->sortable(),
                 TextColumn::make('payment_mode')->label('Payment')->badge(),
-                TextColumn::make('delivery_fee')
-                    ->label('Fee')
-                    ->formatStateUsing(fn ($state) => Money::tzs($state))
-                    ->sortable(),
                 TextColumn::make('delivery_days_max')
                     ->label('Days')
                     ->formatStateUsing(fn (Region $record) => $record->delivery_days_min === $record->delivery_days_max
@@ -124,7 +113,10 @@ class RegionResource extends Resource
                 ToggleColumn::make('is_active')->label('Active'),
             ])
             ->filters([
-                SelectFilter::make('payment_mode')->options(PaymentMode::class),
+                SelectFilter::make('payment_mode')->options([
+                    PaymentMode::CashOnDelivery->value => PaymentMode::CashOnDelivery->getLabel(),
+                    PaymentMode::Prepaid->value => PaymentMode::Prepaid->getLabel(),
+                ]),
             ])
             ->recordActions([
                 EditAction::make(),

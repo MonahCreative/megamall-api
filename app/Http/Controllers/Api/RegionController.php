@@ -8,7 +8,7 @@ use Illuminate\Http\JsonResponse;
 
 class RegionController extends Controller
 {
-    /** GET /api/regions — every region with its delivery fee and payment rule, for the checkout form. */
+    /** GET /api/regions — every region with its payment rule and delivery time, for the checkout form. */
     public function index(): JsonResponse
     {
         $regions = Region::active()
@@ -21,12 +21,10 @@ class RegionController extends Controller
                 'name' => $r->name,
                 'payment_mode' => $r->payment_mode->value,
                 'payment_mode_label' => $r->payment_mode->label(),
-                'delivery_fee' => $r->delivery_fee,
                 'delivery_days' => [$r->delivery_days_min, $r->delivery_days_max],
                 'districts' => $r->districts->map(fn ($d) => [
                     'id' => $d->id,
                     'name' => $d->name,
-                    'delivery_fee' => $d->delivery_fee ?? $r->delivery_fee,
                 ]),
             ]);
 

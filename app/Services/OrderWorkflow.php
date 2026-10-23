@@ -57,6 +57,7 @@ class OrderWorkflow
     {
         $this->guard($this->canConfirm($order), 'Only new orders can be confirmed.');
         $order->update(['status' => OrderStatus::Confirmed]);
+        app(OrderNotifier::class)->confirmed($order);
     }
 
     public function pack(Order $order): void
@@ -74,6 +75,7 @@ class OrderWorkflow
             'This order must be paid before it is sent.',
         );
         $order->update(['status' => OrderStatus::Shipped, 'tracking_note' => $note ?: $order->tracking_note]);
+        app(OrderNotifier::class)->shipped($order);
     }
 
     /** Mark delivered. For pay-on-delivery orders, pass $cashCollected = true to record the payment too. */
@@ -83,21 +85,23 @@ class OrderWorkflow
 
         DB::transaction(function () use ($order, $cashCollected, $channel, $reference) {
             if ($cashCollected && ! $order->isPaid()) {
-                $this->recordPayment($order, $channel, $reference);
+                $this->recordPayment($order, $channel, $reference, notify: false);
             }
-            $order->update(['status' => OrderStatus::Delivered]);
+            $order->update(['status' => OrderStatus::Delivered, 'delivered_at' => now()]);
         });
+
+        app(OrderNotifier::class)->delivered($order);
     }
 
     /**
      * Record money received outside the automatic gateway:
      * cash to the rider, or a customer who paid to your Lipa number directly.
      */
-    public function recordPayment(Order $order, string $channel, ?string $reference = null): void
+    public function recordPayment(Order $order, string $channel, ?string $reference = null, bool $notify = true): void
     {
         $this->guard($this->canRecordPayment($order), 'This order is already paid or cancelled.');
 
-        DB::transaction(function () use ($order, $channel, $reference) {
+        DB::transaction(function () use ($order, $channel, $reference, $notify) {
             $order->payments()->create([
                 'gateway' => 'manual',
                 'channel' => $channel,
@@ -115,6 +119,11 @@ class OrderWorkflow
                 'expires_at' => null,
                 'status' => $order->status === OrderStatus::AwaitingPayment ? OrderStatus::Confirmed : $order->status,
             ]);
+
+            if ($notify) {
+                // Staff recorded it themselves, so no staff alert; the customer gets a receipt SMS.
+                app(OrderNotifier::class)->paymentReceived($order, alertStaff: false);
+            }
         });
     }
 

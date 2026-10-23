@@ -20,8 +20,9 @@ class OrderResource extends JsonResource
             'order_number' => $this->order_number,
             'access_token' => $this->when($this->withToken, $this->access_token),
             'customer_name' => $this->customer_name,
-            'phone' => Phone::display($this->phone),
-            'region' => $this->region->name,
+            'channel' => $this->channel ?? 'online',
+            'phone' => $this->phone ? Phone::display($this->phone) : null,
+            'region' => $this->region?->name,
             'district' => $this->district?->name,
             'area' => $this->area,
             'address' => $this->address,
@@ -33,12 +34,15 @@ class OrderResource extends JsonResource
             'needs_payment' => $this->needsPrepayment() && $this->status->value !== 'cancelled',
             'subtotal' => $this->subtotal,
             'delivery_fee' => $this->delivery_fee,
+            'discount' => (int) $this->discount,
             'total' => $this->total,
             'expires_at' => $this->expires_at?->toIso8601String(),
             'paid_at' => $this->paid_at?->toIso8601String(),
+            'delivered_at' => $this->delivered_at?->toIso8601String(),
             'tracking_note' => $this->tracking_note,
             'created_at' => $this->created_at->toIso8601String(),
             'items' => $this->items->map(fn ($item) => [
+                'id' => $item->id,
                 'product_id' => $item->product_id,
                 'name' => $item->product_name,
                 'variant' => $item->variant_name,
@@ -47,6 +51,13 @@ class OrderResource extends JsonResource
                 'line_total' => $item->line_total,
             ]),
             'payment' => $latestPayment ? PaymentResource::make($latestPayment) : null,
+            'returns' => $this->returnRequests()->latest()->get()->map(fn ($return) => [
+                'return_number' => $return->return_number,
+                'status' => $return->status->value,
+                'status_label' => $return->status->getLabel(),
+                'refund_amount' => $return->refund_amount,
+                'created_at' => $return->created_at->toIso8601String(),
+            ]),
         ];
     }
 }

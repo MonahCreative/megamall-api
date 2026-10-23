@@ -39,7 +39,7 @@ class ProductResource extends Resource
 {
     protected static ?string $model = Product::class;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Catalogue';
+    protected static string | UnitEnum | null $navigationGroup = 'Products & Stock';
 
     protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedShoppingBag;
 
@@ -109,12 +109,28 @@ class ProductResource extends Resource
                             ->numeric()
                             ->minValue(0),
                         TextInput::make('stock')
-                            ->label('Stock')
-                            ->helperText('If the product has sizes, set stock per size below.')
+                            ->label(fn (string $operation) => $operation === 'create' ? 'Opening stock' : 'Stock')
+                            ->helperText(fn (string $operation) => $operation === 'create'
+                                ? 'How many you have now. If the product has sizes, set stock per size below instead.'
+                                : 'Change stock with Purchases, Damages or the Stock page, so every change is recorded.')
                             ->numeric()
                             ->minValue(0)
                             ->default(0)
+                            ->disabled(fn (string $operation) => $operation !== 'create')
+                            ->dehydrated(fn (string $operation) => $operation === 'create')
                             ->required(),
+                        TextInput::make('reorder_level')
+                            ->label('Reorder when stock reaches')
+                            ->helperText('Leave empty to use the shop-wide level from Store settings.')
+                            ->placeholder((string) \App\Models\Setting::getValue('low_stock_level', 5))
+                            ->numeric()
+                            ->minValue(0),
+                        TextInput::make('cost_price')
+                            ->label('Cost price (what you pay)')
+                            ->helperText('Updated automatically by each purchase. Only staff see this.')
+                            ->prefix('TZS')
+                            ->numeric()
+                            ->minValue(0),
                         Toggle::make('is_active')
                             ->label('Visible in shop')
                             ->default(true),
@@ -173,9 +189,12 @@ class ProductResource extends Resource
                                         ->prefix('TZS')
                                         ->numeric(),
                                     TextInput::make('stock')
+                                        ->label(fn ($record) => $record ? 'Stock' : 'Opening stock')
                                         ->numeric()
                                         ->minValue(0)
                                         ->default(0)
+                                        ->disabled(fn ($record) => $record !== null)
+                                        ->dehydrated(fn ($record) => $record === null)
                                         ->required(),
                                 ]),
                                 Toggle::make('is_active')->label('Available')->default(true),

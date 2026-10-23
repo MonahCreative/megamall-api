@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\OrderNotifier;
 use App\Support\Phone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,7 +21,7 @@ class PaymentService
 
         return match ($driver) {
             'fake' => app(FakeGateway::class),
-            // 'azampay' => app(AzamPayGateway::class),   // added when we connect the real gateway
+            'azampay' => app(AzamPayGateway::class),
             default => throw new InvalidArgumentException("Unknown payment driver [{$driver}]."),
         };
     }
@@ -79,6 +80,7 @@ class PaymentService
                     'status' => $order->status === OrderStatus::Cancelled ? OrderStatus::Cancelled : OrderStatus::Confirmed,
                     'tracking_note' => $order->status === OrderStatus::Cancelled ? 'Paid after cancellation: refund or reinstate.' : $order->tracking_note,
                 ]);
+                app(OrderNotifier::class)->paymentReceived($order);
             } elseif ($payment->status === PaymentStatus::Failed && $order->payment_status === PaymentStatus::Pending) {
                 $order->update(['payment_status' => PaymentStatus::Failed]);
             }

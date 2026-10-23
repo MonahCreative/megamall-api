@@ -5,10 +5,10 @@ namespace App\Services;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
 use App\Enums\PaymentStatus;
+use App\Enums\StockMovementType;
 use App\Models\District;
 use App\Models\Order;
 use App\Models\Product;
-use App\Models\ProductVariant;
 use App\Models\Region;
 use App\Models\Setting;
 use App\Support\Phone;
@@ -18,11 +18,16 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * All checkout maths happens here, on the server.
- * The browser only sends product ids and quantities; prices, fees and the
+ * The browser only sends product ids and quantities; prices, promotions, fees and the
  * payment rule are never trusted from the client.
  */
 class OrderService
 {
+    public function __construct(
+        private readonly StockService $stock,
+        private readonly PricingService $pricing,
+    ) {}
+
     /**
      * Price a cart for a region without saving anything.
      *
@@ -32,23 +37,22 @@ class OrderService
     {
         $lines = $this->priceLines($items, lock: false);
         $subtotal = array_sum(array_column($lines, 'line_total'));
-        $fee = $this->deliveryFee($region, $district);
 
+        // Delivery is not charged by the shop: the customer pays the rider or bus company directly.
         return [
             'lines' => $lines,
             'subtotal' => $subtotal,
-            'delivery_fee' => $fee,
-            'total' => $subtotal + $fee,
+            'total' => $subtotal,
             'payment_mode' => $region->payment_mode->value,
             'payment_mode_label' => $region->payment_mode->label(),
             'delivery_days' => [$region->delivery_days_min, $region->delivery_days_max],
         ];
     }
 
-    /** Create the order, reserve stock, and apply the Dar = COD / elsewhere = prepaid rule. */
+    /** Create an online order, reserve stock, and apply the Dar = COD / elsewhere = prepaid rule. */
     public function place(array $data): Order
     {
-        return DB::transaction(function () use ($data) {
+        $order = DB::transaction(function () use ($data) {
             $region = Region::active()->findOrFail($data['region_id']);
             $district = isset($data['district_id'])
                 ? District::where('region_id', $region->id)->findOrFail($data['district_id'])
@@ -60,12 +64,12 @@ class OrderService
 
             $lines = $this->priceLines($data['items'], lock: true);
             $subtotal = array_sum(array_column($lines, 'line_total'));
-            $fee = $this->deliveryFee($region, $district);
             $cod = $region->payment_mode === PaymentMode::CashOnDelivery;
 
             $order = Order::create([
                 'order_number' => $this->newOrderNumber(),
                 'access_token' => Str::random(48),
+                'channel' => 'online',
                 'user_id' => $data['user_id'] ?? null,
                 'customer_name' => $data['customer_name'],
                 'phone' => Phone::normalize($data['phone']),
@@ -79,31 +83,46 @@ class OrderService
                 'payment_status' => PaymentStatus::Unpaid,
                 'status' => $cod ? OrderStatus::Pending : OrderStatus::AwaitingPayment,
                 'subtotal' => $subtotal,
-                'delivery_fee' => $fee,
-                'total' => $subtotal + $fee,
+                'delivery_fee' => 0, // paid by the customer to the rider/bus, not through the shop
+                'discount' => 0,
+                'total' => $subtotal,
                 'expires_at' => $cod ? null : now()->addMinutes((int) Setting::getValue('prepaid_order_expiry_minutes', 60)),
             ]);
 
-            foreach ($lines as $line) {
-                $order->items()->create([
-                    'product_id' => $line['product_id'],
-                    'product_variant_id' => $line['variant_id'],
-                    'product_name' => $line['name'],
-                    'variant_name' => $line['variant_name'],
-                    'unit_price' => $line['unit_price'],
-                    'quantity' => $line['quantity'],
-                    'line_total' => $line['line_total'],
-                ]);
-
-                // Reserve stock now so two customers can't buy the last item.
-                $line['variant_id']
-                    ? ProductVariant::whereKey($line['variant_id'])->decrement('stock', $line['quantity'])
-                    : Product::whereKey($line['product_id'])->decrement('stock', $line['quantity']);
-                Product::whereKey($line['product_id'])->increment('sold_count', $line['quantity']);
-            }
+            $this->saveLinesAndTakeStock($order, $lines, StockMovementType::OnlineSale);
 
             return $order->load('items', 'region', 'district');
         });
+
+        app(OrderNotifier::class)->orderPlaced($order);
+
+        return $order;
+    }
+
+    /**
+     * Write the order lines and take the stock (used by online orders and POS sales).
+     *
+     * @param  array<int, array>  $lines  output of priceLines()
+     */
+    public function saveLinesAndTakeStock(Order $order, array $lines, StockMovementType $type): void
+    {
+        foreach ($lines as $line) {
+            $order->items()->create([
+                'product_id' => $line['product_id'],
+                'product_variant_id' => $line['variant_id'],
+                'product_name' => $line['name'],
+                'variant_name' => $line['variant_name'],
+                'unit_price' => $line['unit_price'],
+                // Cost at the time of sale, for profit reports. Never sent to customers.
+                'unit_cost' => Product::whereKey($line['product_id'])->value('cost_price'),
+                'quantity' => $line['quantity'],
+                'line_total' => $line['line_total'],
+            ]);
+
+            // Reserve stock now so two customers can't buy the last item.
+            $this->stock->move($line['product_id'], $line['variant_id'], -$line['quantity'], $type, $order, "Order {$order->order_number}");
+            Product::whereKey($line['product_id'])->increment('sold_count', $line['quantity']);
+        }
     }
 
     /** Cancel an order and give its stock back. */
@@ -116,26 +135,23 @@ class OrderService
             }
 
             foreach ($order->items as $item) {
-                if ($item->product_variant_id) {
-                    ProductVariant::whereKey($item->product_variant_id)->increment('stock', $item->quantity);
-                } elseif ($item->product_id) {
-                    Product::whereKey($item->product_id)->increment('stock', $item->quantity);
+                if ($item->product_id) {
+                    $this->stock->move($item->product_id, $item->product_variant_id, $item->quantity, StockMovementType::OrderCancelled, $order, $reason);
+                    Product::whereKey($item->product_id)->where('sold_count', '>=', $item->quantity)->decrement('sold_count', $item->quantity);
                 }
             }
 
             $order->update(['status' => OrderStatus::Cancelled, 'tracking_note' => $reason]);
+            app(OrderNotifier::class)->cancelled($order, $reason);
         });
     }
 
-    public function deliveryFee(Region $region, ?District $district = null): int
-    {
-        return $district?->delivery_fee ?? $region->delivery_fee;
-    }
-
     /**
+     * Check stock and work out prices (including promotions) for a cart.
+     *
      * @return array<int, array{product_id:int, variant_id:?int, name:string, variant_name:?string, unit_price:int, quantity:int, line_total:int}>
      */
-    private function priceLines(array $items, bool $lock): array
+    public function priceLines(array $items, bool $lock): array
     {
         if (empty($items)) {
             throw ValidationException::withMessages(['items' => 'Your cart is empty.']);
@@ -144,7 +160,7 @@ class OrderService
         $lines = [];
         foreach (array_values($items) as $i => $item) {
             $qty = (int) $item['quantity'];
-            $query = Product::active()->whereKey($item['product_id']);
+            $query = Product::active()->with('category')->whereKey($item['product_id']);
             $product = ($lock ? $query->lockForUpdate() : $query)->first();
 
             if (! $product) {
@@ -171,7 +187,7 @@ class OrderService
                 ]);
             }
 
-            $unit = $variant?->price ?? $product->price;
+            $unit = $this->pricing->unitPrice($product, $variant);
             $lines[] = [
                 'product_id' => $product->id,
                 'variant_id' => $variant?->id,
@@ -186,10 +202,10 @@ class OrderService
         return $lines;
     }
 
-    private function newOrderNumber(): string
+    public function newOrderNumber(string $prefix = 'MM'): string
     {
         do {
-            $number = 'MM'.now()->format('ymd').'-'.strtoupper(Str::random(5));
+            $number = $prefix.now()->format('ymd').'-'.strtoupper(Str::random(5));
         } while (Order::where('order_number', $number)->exists());
 
         return $number;

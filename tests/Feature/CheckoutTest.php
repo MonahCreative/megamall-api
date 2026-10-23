@@ -51,9 +51,24 @@ class CheckoutTest extends TestCase
             ->assertJsonPath('next_step', 'done')
             ->assertJsonPath('data.payment_mode', 'cod')
             ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.subtotal', 64000);
+            ->assertJsonPath('data.subtotal', 64000)
+            ->assertJsonPath('data.total', 64000);
 
         $this->assertSame(3, $this->product->fresh()->stock);
+    }
+
+    public function test_delivery_is_not_charged_by_the_shop(): void
+    {
+        $dar = Region::where('name', 'Dar es Salaam')->first();
+
+        $this->postJson('/api/checkout/quote', [
+            'region_id' => $dar->id,
+            'district_id' => $dar->districts()->where('name', 'Kigamboni')->value('id'),
+            'items' => [['product_id' => $this->product->id, 'quantity' => 1]],
+        ])->assertOk()->assertJsonPath('data.total', 32000)->assertJsonMissingPath('data.delivery_fee');
+
+        $this->getJson('/api/store')->assertJsonPath('delivery_note', fn ($note) => str_contains($note, 'rider'));
+        $this->getJson('/api/regions')->assertOk()->assertJsonMissingPath('data.0.delivery_fee');
     }
 
     public function test_other_regions_must_pay_first(): void
@@ -63,8 +78,8 @@ class CheckoutTest extends TestCase
             ->assertJsonPath('next_step', 'pay')
             ->assertJsonPath('data.payment_mode', 'prepaid')
             ->assertJsonPath('data.status', 'awaiting_payment')
-            ->assertJsonPath('data.delivery_fee', 12000)
-            ->assertJsonPath('data.total', 76000);
+            ->assertJsonPath('data.delivery_fee', 0)
+            ->assertJsonPath('data.total', 64000); // delivery is paid to the bus/rider, not to the shop
     }
 
     public function test_mobile_money_payment_confirms_the_order(): void

@@ -5,149 +5,222 @@ namespace Database\Seeders;
 use App\Models\Banner;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Promotion;
+use App\Services\StockService;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
- * Sample catalogue so the shop isn't empty while we build.
- * Every product gets a generated placeholder image; replace them with real
- * photos in the admin panel. Delete sample products before going live.
+ * Demo catalogue for showing the shop: 27 everyday products across 12 categories,
+ * with real photos from Unsplash (free to use under the Unsplash License, https://unsplash.com/license).
+ *
+ * Photos are downloaded into storage/app/public/products, so they can be edited in the admin like any upload.
+ * If a download fails (no internet, or PHP missing SSL certificates), the product links to the photo online instead.
+ * Replace prices, stock and photos with your real products before going live.
  */
 class CatalogSeeder extends Seeder
 {
-    /** category => [colour, products[name, brand, price, was-price|null, stock, short description]] */
-    private const CATALOG = [
-        'Fashion' => ['#B4472F', [
-            ['Men\'s Kitenge Print Shirt', 'Mega Wear', 38000, 45000, 40, 'Breathable cotton shirt with a bold kitenge print. Sizes S to XXL.'],
-            ['Women\'s Maxi Dress', 'Mega Wear', 55000, null, 25, 'Flowing maxi dress for weddings, church and evenings out.'],
-            ['Men\'s Leather Sneakers', 'StepUp', 78000, 95000, 18, 'Genuine leather sneakers with a cushioned sole. Sizes 40 to 45.'],
-            ['Women\'s Handbag', 'Lulu', 42000, null, 30, 'Structured handbag with zip pocket and shoulder strap.'],
-        ]],
-        'Phones & Accessories' => ['#1D6FA3', [
-            ['Smartphone 6.7" 128GB Dual SIM', 'Nova', 385000, 420000, 14, 'Large display, 50MP camera and 5000mAh battery. Works on all Tanzanian networks.'],
-            ['20,000mAh Power Bank', 'Volt', 45000, 55000, 60, 'Charges a phone up to 4 times. Fast charging, two USB ports.'],
-            ['Wireless Earbuds', 'Sauti', 35000, null, 50, 'Bluetooth 5.3 earbuds with charging case and 24-hour total battery.'],
-        ]],
-        'Electronics' => ['#2E5C8A', [
-            ['43" Full HD Smart TV', 'Vision', 690000, 750000, 6, 'Smart TV with YouTube and Netflix, two HDMI ports and free-to-air tuner.'],
-            ['Bluetooth Party Speaker', 'Sauti', 120000, null, 12, 'Loud portable speaker with lights, microphone input and FM radio.'],
-            ['Smart Watch with Heart-Rate Monitor', 'Nova', 72000, 85000, 20, 'Tracks steps, sleep and heart rate. Shows calls and WhatsApp messages.'],
-        ]],
-        'Home & Kitchen' => ['#A06A00', [
-            ['1.5L Blender with Grinder', 'Jikoni', 89000, null, 15, 'Blends juice and grinds spices. 600W motor, two jars included.'],
-            ['Non-Stick Cooking Pot Set (5 pcs)', 'Jikoni', 115000, 140000, 10, 'Five pots with glass lids. Works on gas and electric cookers.'],
-            ['Electric Kettle 1.8L', 'Jikoni', 32000, null, 35, 'Stainless steel kettle with auto shut-off.'],
-            ['Steam Iron 2200W', 'Pasi', 45000, null, 22, 'Steam and dry ironing with non-stick soleplate.'],
-        ]],
-        'Furniture' => ['#7A5230', [
-            ['3-Seater Fabric Sofa', 'Nyumba', 1250000, 1400000, 3, 'Comfortable sofa with solid wood frame. Delivered assembled in Dar es Salaam.'],
-            ['Office Chair with Lumbar Support', 'Ofisi', 210000, null, 8, 'Adjustable height, mesh back and armrests.'],
-            ['Plastic Shoe Rack (5 Tier)', 'Nyumba', 28000, null, 40, 'Holds up to 15 pairs. Easy to assemble.'],
-        ]],
-        'Beauty & Personal Care' => ['#0F6B4A', [
-            ['Shea Butter Body Lotion 400ml', 'Asili', 18000, null, 80, 'Deep moisture for dry skin, made with natural shea butter.'],
-            ['Hair Clipper Set', 'Kinyozi', 48000, 60000, 25, 'Cordless clipper with 4 guide combs. 2-hour battery.'],
-            ['Perfume for Women 100ml', 'Marashi', 65000, null, 20, 'Long-lasting floral fragrance.'],
-        ]],
-        'Health & Fitness' => ['#2F8F6B', [
-            ['24-Head Fascia Massage Gun', 'Afya', 139000, 179000, 7, 'Relieves muscle pain after work or training. 6 speeds and 24 heads.'],
-            ['Digital Blood Pressure Monitor', 'Afya', 68000, null, 15, 'Upper-arm monitor with memory for two users.'],
-            ['Adjustable Dumbbell Set 20kg', 'Nguvu', 145000, null, 9, 'Two dumbbells with removable plates for home workouts.'],
-        ]],
-        'Groceries & Supermarket' => ['#5E8C2F', [
-            ['Basmati Rice 5kg', 'Shamba', 22000, null, 100, 'Long grain basmati rice.'],
-            ['Sunflower Cooking Oil 5L', 'Shamba', 38000, 42000, 60, 'Pure sunflower oil, made in Tanzania.'],
-            ['Kilimanjaro Ground Coffee 500g', 'Kahawa', 16000, null, 70, 'Medium roast Arabica coffee from the slopes of Kilimanjaro.'],
-        ]],
-        'Baby & Kids' => ['#C2618B', [
-            ['Baby Diapers Size 4 (64 pcs)', 'Mtoto', 36000, null, 50, 'Soft, leak-protected diapers for babies 9 to 14kg.'],
-            ['Kids School Backpack', 'Shule', 25000, 30000, 45, 'Padded straps and three compartments.'],
-            ['Baby Stroller', 'Mtoto', 260000, null, 5, 'Foldable stroller with sun canopy and storage basket.'],
-        ]],
-        'Automotive' => ['#3D4A55', [
-            ['Car Phone Holder', 'Gari', 15000, null, 60, 'Dashboard and vent holder for phones up to 7 inches.'],
-            ['Car Vacuum Cleaner', 'Gari', 42000, 55000, 20, 'Cordless vacuum for car seats and mats.'],
-            ['Tyre Inflator Pump', 'Gari', 75000, null, 12, 'Digital pressure gauge, plugs into the car charger socket.'],
-        ]],
-        'Tools & Hardware' => ['#8A6D1F', [
-            ['Cordless Drill 21V', 'Fundi', 135000, 160000, 10, 'Two batteries, charger and drill bits in a carry case.'],
-            ['High-Power LED Tactical Flashlight', 'Mwanga', 88000, 95000, 25, 'Super bright long-range torch, rechargeable, waterproof.'],
-            ['50W Solar Panel Kit', 'Mwanga', 180000, null, 8, 'Panel, controller and bulbs. Lights a small home without TANESCO.'],
-        ]],
-        'Books & Stationery' => ['#4B4E8C', [
-            ['A4 Exercise Books (10 pcs)', 'Shule', 12000, null, 120, 'Ruled 96-page exercise books.'],
-            ['Scientific Calculator', 'Hesabu', 35000, null, 40, 'Approved for NECTA exams. 240 functions.'],
-        ]],
+    /** Category name => sort order. */
+    private const CATEGORIES = [
+        'Fashion', 'Phones & Accessories', 'Electronics', 'Home & Kitchen', 'Furniture', 'Beauty & Personal Care',
+        'Health & Fitness', 'Groceries & Supermarket', 'Baby & Kids', 'Automotive', 'Tools & Hardware', 'Books & Stationery',
     ];
 
-    /** Fashion items get size variants. */
-    private const VARIANTS = [
-        'Men\'s Kitenge Print Shirt' => ['Size' => ['S', 'M', 'L', 'XL', 'XXL']],
-        'Women\'s Maxi Dress' => ['Size' => ['S', 'M', 'L', 'XL']],
-        'Men\'s Leather Sneakers' => ['Size' => ['40', '41', '42', '43', '44', '45']],
+    /**
+     * [category, name, brand, price, old price|null, stock, Unsplash photo id, short description, details[], sizes[]|null]
+     */
+    private const PRODUCTS = [
+        ['Fashion', "Men's Kitenge Print Shirt", 'Mega Wear', 38000, 45000, 40, '1776435303185-95be02310cff',
+            'Breathable cotton shirt with a bold African print. Made for Dar heat, smart enough for Friday.',
+            ['100% cotton, soft after washing', 'Short sleeves, regular fit', 'Machine wash at 30°C'], ['S', 'M', 'L', 'XL', 'XXL']],
+        ['Fashion', "Women's Printed Maxi Dress", 'Mega Wear', 55000, null, 24, '1671848633245-79cc98b0dbe8',
+            'Flowing full-length dress in a colourful print, for weddings, church and evenings out.',
+            ['Light, breathable fabric', 'Elastic waist for a comfortable fit', 'Length: ankle'], ['S', 'M', 'L', 'XL']],
+        ['Fashion', 'Classic White Sneakers', 'StepUp', 78000, 95000, 30, '1544441892-794166f1e3be',
+            'Clean low-top sneakers that go with jeans, shorts or a kitenge shirt.',
+            ['Synthetic leather upper, easy to wipe clean', 'Cushioned insole for all-day walking', 'Rubber sole with good grip'], ['40', '41', '42', '43', '44', '45']],
+        ['Fashion', "Women's Leather Handbag", 'Lulu', 65000, null, 18, '1624687943971-e86af76d57de',
+            'Structured brown leather handbag with a zip pocket and adjustable strap.',
+            ['Genuine leather', 'Inside zip pocket and phone pocket', 'Fits an A4 notebook']],
+
+        ['Phones & Accessories', 'Smartphone 6.7" 128GB Dual SIM', 'Nova', 385000, 420000, 14, '1480694313141-fce5e697ee25',
+            'Big 6.7" screen, 50MP camera and a 5000mAh battery that lasts all day. Works on Vodacom, Airtel, Yas and Halotel.',
+            ['6.7" HD+ display', '128GB storage, 6GB RAM', '50MP main camera, 8MP selfie camera', 'Dual SIM, 4G', '1-year warranty']],
+        ['Phones & Accessories', '20,000mAh Power Bank', 'Volt', 45000, 55000, 60, '1566554738544-d962991c3fee',
+            'Charges a smartphone up to four times. Ideal for travel and power cuts.',
+            ['20,000mAh capacity', 'Two USB outputs, fast charging', 'Battery level display']],
+        ['Phones & Accessories', 'Wireless Bluetooth Earbuds', 'Sauti', 35000, null, 50, '1606220588913-b3aacb4d2f46',
+            'True wireless earbuds with a pocket charging case and clear calls.',
+            ['Bluetooth 5.3', 'Up to 24 hours with the case', 'Touch controls, built-in microphone']],
+
+        ['Electronics', '43" Full HD Smart TV', 'Vision', 690000, 750000, 8, '1593359677879-a4bb92f829d1',
+            'Stream YouTube and Netflix or watch free-to-air channels on a sharp 43" Full HD screen.',
+            ['43" Full HD (1920 × 1080)', 'YouTube, Netflix and apps built in', '2 HDMI, 2 USB, Wi-Fi', 'Free-to-air digital tuner', '2-year warranty']],
+        ['Electronics', 'Portable Bluetooth Speaker', 'Sauti', 120000, 140000, 15, '1589003077984-894e133dabab',
+            'Loud, deep sound in a speaker you can carry to the beach or the party.',
+            ['Up to 12 hours of play', 'Splash-resistant', 'Bluetooth, USB and AUX input']],
+        ['Electronics', 'Smart Watch with Heart-Rate Monitor', 'Nova', 72000, 85000, 25, '1624096104992-9b4fa3a279dd',
+            'Tracks your steps, sleep and heart rate, and shows calls and WhatsApp messages.',
+            ['1.8" colour touch screen', 'Heart rate, steps, sleep tracking', 'Up to 7 days battery', 'Works with Android and iPhone']],
+
+        ['Home & Kitchen', '5L Stand Mixer', 'Jikoni', 289000, 320000, 10, '1564940735784-b15466e8dc09',
+            'Mix cake batter, knead dough for chapati and mandazi, and whip cream with one machine.',
+            ['5 litre stainless steel bowl', '6 speeds plus pulse', 'Whisk, beater and dough hook included']],
+        ['Home & Kitchen', 'Stainless Steel Cooking Pot Set (5 pcs)', 'Jikoni', 115000, 140000, 20, '1604414499020-f9ac575bc5ec',
+            'Five stainless steel pots with lids for pilau, maharage and everything in between.',
+            ['5 sizes from 1.5L to 6L', 'Works on gas, electric and charcoal', 'Easy to clean, rust-free']],
+        ['Home & Kitchen', 'Stainless Steel Kettle 2.5L', 'Jikoni', 32000, null, 35, '1594213114663-d94db9b17125',
+            'Classic stovetop kettle for chai every morning.',
+            ['2.5 litre capacity', 'Heat-safe handle', 'Works on gas and electric stoves']],
+
+        ['Furniture', '3-Seater Fabric Sofa', 'Nyumba', 1250000, 1400000, 4, '1555041469-a586c61ea9bc',
+            'Comfortable three-seater sofa in soft green fabric with a solid wood frame.',
+            ['Solid hardwood frame', 'High-density foam cushions', 'W 210 cm × D 85 cm × H 80 cm', 'Delivered assembled in Dar es Salaam']],
+        ['Furniture', 'Ergonomic Office Chair', 'Ofisi', 210000, 245000, 12, '1612372606404-0ab33e7187ee',
+            'Adjustable office chair with lumbar support for long working days.',
+            ['Height adjustable', 'Breathable mesh back', 'Smooth-rolling wheels, 360° swivel']],
+
+        ['Beauty & Personal Care', 'Shea Butter Body Lotion 400ml', 'Asili', 18000, null, 80, '1620916566398-39f1143ab7be',
+            'Rich lotion with natural shea butter for soft, moisturised skin all day.',
+            ['400ml', 'With shea butter and vitamin E', 'For dry and normal skin']],
+        ['Beauty & Personal Care', 'Eau de Parfum 100ml', 'Marashi', 65000, 80000, 20, '1594035910387-fea47794261f',
+            'Warm, long-lasting fragrance for day and evening.',
+            ['100ml spray bottle', 'Lasts 6 to 8 hours', 'Gift box included']],
+
+        ['Health & Fitness', 'Adjustable Dumbbell Set 20kg', 'Nguvu', 145000, null, 9, '1623874228601-f4193c7b1818',
+            'Two dumbbells with removable plates for a full home workout.',
+            ['20kg total (2 × 10kg)', 'Removable plates with secure collars', 'Non-slip grip']],
+
+        ['Groceries & Supermarket', 'Tanzanian Arabica Coffee Beans 1kg', 'Kahawa', 28000, null, 70, '1562051036-e0eea191d42f',
+            'Medium-roast Arabica from the slopes of Kilimanjaro, roasted in Tanzania.',
+            ['1kg whole beans', 'Medium roast, chocolate and citrus notes', 'Grown on Kilimanjaro and Mbeya farms']],
+        ['Groceries & Supermarket', 'Premium Basmati Rice 5kg', 'Shamba', 24000, 27000, 100, '1568347355280-d33fdf77d42a',
+            'Long-grain basmati that cooks fluffy every time, perfect for pilau and biryani.',
+            ['5kg bag', 'Long grain, aromatic', 'Cleaned and sorted']],
+
+        ['Baby & Kids', 'Foldable Baby Stroller', 'Mtoto', 260000, 295000, 6, '1559135141-2bea6465fccf',
+            'Light, foldable stroller with a sun canopy and storage basket.',
+            ['Folds with one hand', 'Adjustable backrest, 5-point harness', 'For babies 0 to 3 years']],
+        ['Baby & Kids', 'Kids School Backpack', 'Shule', 25000, 30000, 45, '1726726192148-af52008ff663',
+            'Bright, sturdy school bag with padded straps and three compartments.',
+            ['Water-resistant fabric', 'Padded back and straps', 'Fits A4 exercise books']],
+
+        ['Automotive', 'Car Phone Holder (Dashboard Mount)', 'Gari', 15000, null, 60, '1764347923709-fc48487f2486',
+            'Keep your phone in view for maps and calls while you drive.',
+            ['Fits phones up to 7"', 'Dashboard and windscreen mount', '360° rotation']],
+
+        ['Tools & Hardware', 'Cordless Drill 21V', 'Fundi', 135000, 160000, 10, '1622044939413-0b829c342434',
+            'Drill into wood, metal and walls without looking for a socket.',
+            ['21V lithium battery, 2 batteries included', '2 speeds, 25 torque settings', 'Charger and drill bits in a carry case']],
+        ['Tools & Hardware', 'High-Power LED Tactical Flashlight', 'Mwanga', 88000, 95000, 25, '1561916960-dea3b9b0355a',
+            'Very bright, long-range torch for security, night travel and power cuts.',
+            ['Rechargeable by USB', 'Zoom beam, 5 light modes', 'Waterproof aluminium body']],
+        ['Tools & Hardware', '50W Solar Panel Kit', 'Mwanga', 180000, null, 8, '1558449028-b53a39d100fc',
+            'Panel, controller and bulbs to light a small home and charge phones without TANESCO.',
+            ['50W solar panel', 'Charge controller with USB ports', '4 LED bulbs and cables included']],
+
+        ['Books & Stationery', 'A4 Hardcover Notebooks (3 pack)', 'Shule', 15000, null, 120, '1636014724389-270c4e9c0100',
+            'Three ruled hardcover notebooks for school, university or the office.',
+            ['A4, 192 pages each', 'Ruled lines', 'Strong hard cover']],
+    ];
+
+    /** Home page slider: product name => badge. */
+    private const BANNERS = [
+        '43" Full HD Smart TV' => 'New arrival',
+        '3-Seater Fabric Sofa' => 'Best seller',
+        'Smartphone 6.7" 128GB Dual SIM' => 'Hot deal',
+        '5L Stand Mixer' => 'Kitchen week',
     ];
 
     public function run(): void
     {
-        $sort = 0;
-        foreach (self::CATALOG as $categoryName => [$colour, $products]) {
-            $category = Category::updateOrCreate(
-                ['slug' => Str::slug($categoryName)],
-                ['name' => $categoryName, 'sort_order' => $sort++, 'is_active' => true],
-            );
+        foreach (self::CATEGORIES as $order => $name) {
+            Category::updateOrCreate(['slug' => Str::slug($name)], ['name' => $name, 'sort_order' => $order, 'is_active' => true]);
+        }
 
-            foreach ($products as $i => [$name, $brand, $price, $was, $stock, $short]) {
-                $slug = Str::slug($name);
-                $product = Product::updateOrCreate(['slug' => $slug], [
-                    'category_id' => $category->id,
-                    'name' => $name,
-                    'brand' => $brand,
-                    'sku' => 'MM-'.strtoupper(Str::substr(Str::slug($categoryName, ''), 0, 3)).'-'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
-                    'short_description' => $short,
-                    'description' => "<p>{$short}</p><ul><li>Genuine product, checked before dispatch</li><li>Pay on delivery in Dar es Salaam</li><li>Delivered to all regions of Tanzania</li></ul>",
-                    'price' => $price,
-                    'compare_at_price' => $was,
-                    'stock' => $stock,
-                    'is_active' => true,
-                    'is_featured' => $was !== null && $i === 0,
-                    'sold_count' => random_int(3, 250),
-                ]);
+        $count = [];
+        foreach (self::PRODUCTS as $row) {
+            [$categoryName, $name, $brand, $price, $was, $stock, $photo, $short, $details] = $row;
+            $sizes = $row[9] ?? null;
+            $category = Category::where('slug', Str::slug($categoryName))->first();
+            $count[$categoryName] = ($count[$categoryName] ?? 0) + 1;
+            $slug = Str::slug($name);
 
-                if (! $product->images()->exists()) {
-                    $path = "products/{$slug}.svg";
-                    Storage::disk('public')->put($path, $this->placeholder($name, $categoryName, $colour));
-                    $product->images()->create(['path' => $path, 'sort_order' => 0]);
-                }
+            $product = Product::updateOrCreate(['slug' => $slug], [
+                'category_id' => $category->id,
+                'name' => $name,
+                'brand' => $brand,
+                'sku' => 'MM-'.strtoupper(Str::substr(Str::slug($categoryName, ''), 0, 3)).'-'.str_pad((string) $count[$categoryName], 3, '0', STR_PAD_LEFT),
+                'short_description' => $short,
+                'description' => '<p>'.e($short).'</p><ul>'.collect($details)->map(fn ($line) => '<li>'.e($line).'</li>')->join('')
+                    .'</ul><p>Pay on delivery in Dar es Salaam. Delivered to all regions of Tanzania.</p>',
+                'price' => $price,
+                'compare_at_price' => $was,
+                'cost_price' => (int) round($price * 0.68, -2),
+                'stock' => $sizes ? 0 : $stock,
+                'is_active' => true,
+                'is_featured' => $was !== null,
+                'sold_count' => random_int(5, 180),
+            ]);
 
-                if (isset(self::VARIANTS[$name]) && ! $product->variants()->exists()) {
-                    foreach (self::VARIANTS[$name] as $option => $values) {
-                        foreach ($values as $value) {
-                            $product->variants()->create([
-                                'name' => "{$option}: {$value}",
-                                'options' => [$option => $value],
-                                'stock' => intdiv($stock, count($values)) ?: 1,
-                            ]);
-                        }
-                    }
+            if (! $product->images()->exists()) {
+                $product->images()->create(['path' => $this->photo($photo, $slug), 'sort_order' => 0]);
+            }
+
+            if ($sizes && ! $product->variants()->exists()) {
+                foreach ($sizes as $size) {
+                    $product->variants()->create([
+                        'name' => (is_numeric($size) ? 'Size: EU ' : 'Size: ').$size,
+                        'options' => ['Size' => $size],
+                        'stock' => max(2, intdiv($stock, count($sizes))),
+                        'is_active' => true,
+                    ]);
                 }
             }
+
+            app(StockService::class)->recordOpeningStock($product);
         }
 
         $this->seedBanners();
+        $this->seedPromotion();
+    }
+
+    /**
+     * Download the Unsplash photo as a square 900px JPG into public storage.
+     * Returns the stored path, or the online URL if the download did not work.
+     */
+    private function photo(string $id, string $slug): string
+    {
+        $url = "https://images.unsplash.com/photo-{$id}?w=900&h=900&fit=crop&crop=entropy&q=80&fm=jpg";
+        $path = "products/{$slug}.jpg";
+
+        if (Storage::disk('public')->exists($path)) {
+            return $path;
+        }
+
+        try {
+            $response = Http::timeout(30)->retry(2, 500)->get($url);
+            if ($response->successful() && str_starts_with((string) $response->header('Content-Type'), 'image/')) {
+                Storage::disk('public')->put($path, $response->body());
+                $this->command?->info("  photo saved: {$slug}");
+
+                return $path;
+            }
+        } catch (Throwable $exception) {
+            $this->command?->warn("  could not download the photo for {$slug} ({$exception->getMessage()}); linking to it online instead.");
+        }
+
+        return $url;
     }
 
     private function seedBanners(): void
     {
-        $picks = [
-            ['high-power-led-tactical-flashlight', 'Video demo'],
-            ['24-head-fascia-massage-gun', 'Best seller'],
-            ['43-full-hd-smart-tv', 'New arrival'],
-            ['non-stick-cooking-pot-set-5-pcs', 'Kitchen deal'],
-        ];
-
-        foreach ($picks as $order => [$slug, $badge]) {
-            $product = Product::where('slug', $slug)->first();
+        $order = 0;
+        foreach (self::BANNERS as $name => $badge) {
+            $product = Product::where('name', $name)->first();
             if (! $product) {
                 continue;
             }
@@ -157,33 +230,24 @@ class CatalogSeeder extends Seeder
                 'badge' => $badge,
                 'button_text' => 'Buy now',
                 'link' => '/product/'.$product->slug,
-                'sort_order' => $order,
+                'sort_order' => $order++,
                 'is_active' => true,
             ]);
         }
     }
 
-    /** A simple square SVG with the product name, so the grid looks real before photos are uploaded. */
-    private function placeholder(string $name, string $category, string $colour): string
+    /** A running "Kitchen week" sale, so the shop shows promotion badges and countdowns. */
+    private function seedPromotion(): void
     {
-        $lines = explode("\n", wordwrap($name, 18, "\n", true));
-        $y = 400 - (count($lines) - 1) * 32;
-        $text = '';
-        foreach ($lines as $n => $line) {
-            $text .= '<text x="400" y="'.($y + $n * 64).'" text-anchor="middle" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#fff">'
-                .htmlspecialchars($line, ENT_XML1).'</text>';
-        }
-        $cat = htmlspecialchars(strtoupper($category), ENT_XML1);
-
-        return <<<SVG
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
-  <rect width="800" height="800" fill="{$colour}"/>
-  <circle cx="680" cy="120" r="220" fill="#ffffff" opacity="0.08"/>
-  <circle cx="90" cy="720" r="180" fill="#000000" opacity="0.08"/>
-  <text x="400" y="170" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" letter-spacing="6" fill="#fff" opacity="0.8">{$cat}</text>
-  {$text}
-  <text x="400" y="700" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#fff" opacity="0.7">MEGA MALL TANZANIA · SAMPLE PHOTO</text>
-</svg>
-SVG;
+        $promotion = Promotion::updateOrCreate(['name' => 'Kitchen week'], [
+            'discount_type' => 'percent',
+            'discount_value' => 15,
+            'applies_to' => 'categories',
+            'starts_at' => now()->startOfDay(),
+            'ends_at' => now()->addDays(6)->endOfDay(),
+            'is_active' => true,
+            'badge' => 'Kitchen week',
+        ]);
+        $promotion->categories()->sync([Category::where('slug', 'home-kitchen')->value('id')]);
     }
 }

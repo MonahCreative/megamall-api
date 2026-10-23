@@ -1,0 +1,5 @@
+# Add with:  crontab -u deploy -e   then paste these two lines.
+# Every minute: Laravel's scheduler (cancels unpaid upcountry orders after the payment window).
+* * * * * cd /var/www/megamall-api && php artisan schedule:run >> /dev/null 2>&1
+# 02:30 every night: database + photo backup.
+30 2 * * * bash /var/www/megamall-api/deploy/backup.sh >> /var/backups/megamall/backup.log 2>&1

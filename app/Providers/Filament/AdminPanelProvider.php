@@ -9,6 +9,10 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
+use App\Livewire\NewOrderAlert;
+use App\Support\Theme;
+use Filament\View\PanelsRenderHook;
+use Livewire\Livewire;
 use Filament\Support\Colors\Color;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -27,15 +31,18 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->brandName('Mega Mall Admin')
-            ->colors([
-                'primary' => Color::Orange,
+            // The admin follows the shop's main colour from Store settings (read on each request).
+            ->colors(fn (): array => [
+                'primary' => Color::hex(Theme::colours()['theme_primary']),
                 'gray' => Color::Slate,
             ])
             ->font('Outfit')
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([
-                NavigationGroup::make('Sales'),
-                NavigationGroup::make('Catalogue'),
+                NavigationGroup::make('Orders & POS'),
+                NavigationGroup::make('Reports'),
+                NavigationGroup::make('Products & Stock'),
+                NavigationGroup::make('Promo'),
                 NavigationGroup::make('Delivery'),
                 NavigationGroup::make('Store'),
             ])
@@ -43,6 +50,8 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             // Our own dashboard (app/Filament/Pages/Dashboard.php) is found automatically.
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
+            // New-order pop-up and chime on every admin page (only for logged-in staff).
+            ->renderHook(PanelsRenderHook::BODY_END, fn (): string => auth()->user()?->is_admin ? Livewire::mount(NewOrderAlert::class) : '')
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

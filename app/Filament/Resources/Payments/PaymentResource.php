@@ -22,11 +22,11 @@ class PaymentResource extends Resource
 {
     protected static ?string $model = Payment::class;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Sales';
+    protected static string | UnitEnum | null $navigationGroup = 'Orders & POS';
 
     protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedBanknotes;
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 7;
 
     public static function canCreate(): bool
     {

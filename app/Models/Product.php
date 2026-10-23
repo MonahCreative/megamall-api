@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
@@ -13,7 +14,7 @@ class Product extends Model
 {
     protected $fillable = [
         'category_id', 'name', 'slug', 'sku', 'brand', 'short_description', 'description',
-        'price', 'compare_at_price', 'stock', 'video_url', 'is_active', 'is_featured', 'sold_count',
+        'price', 'compare_at_price', 'cost_price', 'stock', 'reorder_level', 'video_url', 'is_active', 'is_featured', 'sold_count',
     ];
 
     protected function casts(): array
@@ -21,7 +22,9 @@ class Product extends Model
         return [
             'price' => 'integer',
             'compare_at_price' => 'integer',
+            'cost_price' => 'integer',
             'stock' => 'integer',
+            'reorder_level' => 'integer',
             'is_active' => 'boolean',
             'is_featured' => 'boolean',
         ];
@@ -60,6 +63,37 @@ class Product extends Model
     public function variants(): HasMany
     {
         return $this->hasMany(ProductVariant::class);
+    }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class);
+    }
+
+    public function promotions(): BelongsToMany
+    {
+        return $this->belongsToMany(Promotion::class);
+    }
+
+    public function stockMovements(): HasMany
+    {
+        return $this->hasMany(StockMovement::class)->latest('id');
+    }
+
+    /** Total stock across sizes/colours when the product has them, otherwise the product's own stock. */
+    public function totalStock(): int
+    {
+        $variants = $this->relationLoaded('variants') ? $this->variants : $this->variants()->get();
+        $active = $variants->where('is_active', true);
+
+        return $active->isNotEmpty() ? (int) $active->sum('stock') : (int) $this->stock;
+    }
+
+    /** Adds `rating` (average of published reviews) and `review_count` to each product. */
+    public function scopeWithRatings(Builder $query): void
+    {
+        $query->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+            ->withCount(['reviews as review_count' => fn ($reviews) => $reviews->where('status', 'approved')]);
     }
 
     public function scopeActive(Builder $query): void

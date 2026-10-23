@@ -6,9 +6,13 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Region;
 use App\Models\User;
+use App\Services\InventoryService;
 use App\Services\OrderService;
+use App\Services\PosService;
 use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\DemoActivitySeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -23,6 +27,7 @@ class AdminPanelTest extends TestCase
     {
         parent::setUp();
         Storage::fake('public');
+        Http::fake(['images.unsplash.com/*' => Http::response('fake-jpeg', 200, ['Content-Type' => 'image/jpeg'])]);
         $this->seed(DatabaseSeeder::class);
 
         $this->admin = User::factory()->create();
@@ -54,6 +59,9 @@ class AdminPanelTest extends TestCase
             'items' => [['product_id' => Product::where('stock', '>', 0)->whereDoesntHave('variants')->first()->id, 'quantity' => 1]],
         ]);
 
+        $sale = app(PosService::class)->sell([['product_id' => Product::where('stock', '>', 0)->whereDoesntHave('variants')->first()->id, 'quantity' => 1]], 'cash');
+        $purchase = app(InventoryService::class)->receivePurchase([], [['product_id' => Product::first()->id, 'product_variant_id' => Product::first()->variants()->value('id'), 'quantity' => 3, 'unit_cost' => 1000]]);
+
         $pages = [
             '/admin',
             '/admin/orders',
@@ -67,6 +75,32 @@ class AdminPanelTest extends TestCase
             '/admin/regions',
             '/admin/regions/'.$region->id.'/edit',
             '/admin/store-settings',
+            '/admin/pos',
+            '/admin/pos-orders',
+            '/admin/pos-orders/'.$sale->id,
+            '/pos-receipt/'.$sale->id,
+            '/admin/returns',
+            '/admin/refunds',
+            '/admin/purchases',
+            '/admin/purchases/create',
+            '/admin/purchases/'.$purchase->id,
+            '/admin/suppliers',
+            '/admin/damages',
+            '/admin/stock',
+            '/admin/stock-movements',
+            '/admin/reviews',
+            '/admin/promotions',
+            '/admin/product-sections',
+            '/admin/reports',
+            '/admin/cash-ups',
+            '/admin/cash-ups/create',
+            '/admin/sms-outbox',
+            '/admin/shop-pages',
+            '/admin/shop-pages/create',
+            '/print/orders/'.$order->id.'/invoice',
+            '/print/orders/'.$order->id.'/packing-slip',
+            '/admin/reorder',
+            '/admin/back-in-stock-requests',
         ];
 
         foreach ($pages as $page) {
@@ -74,5 +108,16 @@ class AdminPanelTest extends TestCase
         }
 
         $this->assertInstanceOf(Order::class, $order);
+    }
+
+    public function test_demo_catalogue_and_activity_seed_cleanly(): void
+    {
+        $this->seed(DemoActivitySeeder::class);
+
+        $this->assertGreaterThanOrEqual(25, Product::count());
+        $this->assertTrue(Product::first()->images()->first()->path === 'products/'.Product::first()->slug.'.jpg');
+        $this->assertGreaterThan(10, Order::count());
+        $this->actingAs($this->admin)->get('/admin')->assertOk();
+        $this->getJson('/api/sections')->assertOk();
     }
 }

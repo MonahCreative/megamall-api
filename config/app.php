@@ -65,7 +65,8 @@ return [
     |
     */
 
-    'timezone' => 'Africa/Dar_es_salaam',
+    // Tanzania time (EAT, UTC+3), so order times, receipts and "today" in reports and cash-ups are local.
+    'timezone' => env('APP_TIMEZONE', 'Africa/Dar_es_Salaam'),
 
     /*
     |--------------------------------------------------------------------------

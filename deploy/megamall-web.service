@@ -1,0 +1,19 @@
+# /etc/systemd/system/megamall-web.service  (keeps the shop running, restarts it if it crashes or the server reboots)
+# Enable: systemctl daemon-reload && systemctl enable --now megamall-web
+[Unit]
+Description=Mega Mall Tanzania shop (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/var/www/megamall-web
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -12,6 +12,8 @@ class DatabaseSeeder extends Seeder
             SettingSeeder::class,
             RegionSeeder::class,
             CatalogSeeder::class,
+            HomeSectionSeeder::class,
+            ContentPageSeeder::class,
         ]);
     }
 }
