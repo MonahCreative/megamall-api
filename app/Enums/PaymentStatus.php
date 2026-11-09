@@ -17,7 +17,7 @@ enum PaymentStatus: string implements HasColor, HasLabel
     {
         return match ($this) {
             self::Unpaid => 'Not paid',
-            self::Pending => 'Waiting for PIN',
+            self::Pending => 'Waiting to confirm',
             self::Paid => 'Paid',
             self::Failed => 'Failed',
             self::Refunded => 'Refunded',

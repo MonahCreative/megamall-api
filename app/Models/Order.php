@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
 use App\Enums\PaymentStatus;
+use App\Support\LipaNamba;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -101,7 +102,26 @@ class Order extends Model
     public function scopeNeedsAction(Builder $query): void
     {
         $query->where('channel', 'online')
-            ->whereIn('status', [OrderStatus::Pending, OrderStatus::Confirmed, OrderStatus::Processing]);
+            ->where(fn (Builder $todo) => $todo
+                ->whereIn('status', [OrderStatus::Pending, OrderStatus::Confirmed, OrderStatus::Processing])
+                ->orWhere(fn (Builder $check) => $check->paymentToCheck()));
+    }
+
+    /** Customer sent a Lipa Namba transaction ID that staff have not checked yet. */
+    public function scopePaymentToCheck(Builder $query): void
+    {
+        $query->where('status', OrderStatus::AwaitingPayment)
+            ->whereHas('payments', fn (Builder $payment) => $payment->where('gateway', LipaNamba::GATEWAY)->where('status', PaymentStatus::Pending));
+    }
+
+    public function paymentToCheck(): ?Payment
+    {
+        // Cheap check first: only orders waiting for a confirmed payment can have one (saves a query per row in lists).
+        if ($this->status !== OrderStatus::AwaitingPayment || $this->payment_status !== PaymentStatus::Pending) {
+            return null;
+        }
+
+        return $this->payments()->where('gateway', LipaNamba::GATEWAY)->where('status', PaymentStatus::Pending)->latest('id')->first();
     }
 
     public function isPaid(): bool

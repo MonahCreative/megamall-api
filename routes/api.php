@@ -28,6 +28,7 @@ Route::middleware('throttle:30,1')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::post('/orders/track', [OrderController::class, 'track']);
     Route::post('/orders/{number}/pay', [OrderController::class, 'pay']);
+    Route::post('/orders/{number}/lipa-namba', [OrderController::class, 'lipaNamba']);
     Route::post('/products/{slug}/reviews', [CatalogController::class, 'review']);
     Route::post('/products/{slug}/notify', [CatalogController::class, 'notifyWhenBack']);
     Route::post('/returns', [ReturnController::class, 'store']);

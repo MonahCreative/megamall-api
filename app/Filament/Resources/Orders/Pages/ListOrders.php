@@ -20,6 +20,10 @@ class ListOrders extends ListRecords
                 ->badge(Order::query()->needsAction()->count() ?: null)
                 ->badgeColor('warning')
                 ->modifyQueryUsing(fn (Builder $query) => $query->needsAction()),
+            'payment_to_check' => Tab::make('Payments to check')
+                ->badge(Order::query()->online()->paymentToCheck()->count() ?: null)
+                ->badgeColor('danger')
+                ->modifyQueryUsing(fn (Builder $query) => $query->paymentToCheck()),
             'awaiting_payment' => Tab::make('Awaiting payment')
                 ->modifyQueryUsing(fn (Builder $query) => $query->where('status', OrderStatus::AwaitingPayment)),
             'shipped' => Tab::make('On the way')

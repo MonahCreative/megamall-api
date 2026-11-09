@@ -38,6 +38,10 @@ class SettingSeeder extends Seeder
             // Reorder list: re-order at this stock level, and buy enough for this many days of sales.
             'low_stock_level' => 5,
             'reorder_cover_days' => 30,
+            // Upcountry orders: "lipa_namba" (customers pay to your till number, staff confirm) or "automatic" (AzamPay).
+            'payment_method' => \App\Support\LipaNamba::METHOD,
+            'lipa_numbers' => [],
+            'lipa_note' => \App\Support\LipaNamba::DEFAULT_NOTE,
             // Shop colours, changed under Store settings > Website colours.
             ...\App\Support\Theme::DEFAULTS,
         ];

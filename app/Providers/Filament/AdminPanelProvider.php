@@ -30,6 +30,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->profile(isSimple: false) // staff change their own name, email and password (top-right menu)
             ->brandName('Mega Mall Admin')
             // The admin follows the shop's main colour from Store settings (read on each request).
             ->colors(fn (): array => [

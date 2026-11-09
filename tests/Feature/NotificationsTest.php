@@ -32,6 +32,8 @@ class NotificationsTest extends TestCase
     {
         parent::setUp();
         $this->seed([SettingSeeder::class, RegionSeeder::class]);
+        // These tests cover the automatic (PIN prompt) way of paying; Lipa Namba has its own test.
+        \App\Models\Setting::updateOrCreate(['key' => 'payment_method'], ['value' => 'automatic']);
         Notification::fake();
 
         $category = Category::create(['name' => 'Home & Kitchen', 'slug' => 'home-kitchen']);

@@ -29,6 +29,8 @@ class AzamPayTest extends TestCase
     {
         parent::setUp();
         $this->seed([SettingSeeder::class, RegionSeeder::class]);
+        // These tests cover the automatic (PIN prompt) way of paying; Lipa Namba has its own test.
+        \App\Models\Setting::updateOrCreate(['key' => 'payment_method'], ['value' => 'automatic']);
 
         config([
             'payments.driver' => 'azampay',

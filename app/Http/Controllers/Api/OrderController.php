@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PlaceOrderRequest;
 use App\Http\Requests\QuoteRequest;
@@ -76,6 +77,28 @@ class OrderController extends Controller
         ]);
     }
 
+    /** POST /api/orders/{number}/lipa-namba — the customer paid to the shop's Lipa Namba and sends the transaction ID. */
+    public function lipaNamba(Request $request, string $number): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string'],
+            'channel' => ['required', Rule::in(array_keys(config('payments.channels')))],
+            'phone' => ['required', 'string', new TanzanianPhone],
+            'transaction_id' => ['required', 'string', 'max:500'],
+        ], [
+            'phone.required' => 'Enter the number you paid from.',
+            'transaction_id.required' => 'Enter the transaction ID from the confirmation SMS.',
+        ]);
+
+        $order = $this->findForBuyer($request, $number);
+        $this->payments->submitLipaNamba($order, $data['channel'], $data['phone'], $data['transaction_id']);
+
+        return response()->json([
+            'data' => OrderResource::make($order->fresh(['items', 'region', 'district', 'payments'])),
+            'message' => 'Thank you. We are checking your payment and will SMS you once it is confirmed.',
+        ]);
+    }
+
     /** GET /api/orders/{number}/payment-status?token=... — the checkout page polls this every few seconds. */
     public function paymentStatus(Request $request, string $number): OrderResource
     {
@@ -102,7 +125,11 @@ class OrderController extends Controller
 
         abort_unless($order, 404, 'No order found with that number and phone. Check both and try again.');
 
-        return OrderResource::make($order);
+        // Number + phone prove it is the buyer, so an unpaid order can be paid from the Track page too.
+        $resource = OrderResource::make($order);
+        $resource->withToken = $order->needsPrepayment() && $order->status !== OrderStatus::Cancelled;
+
+        return $resource;
     }
 
     private function findForBuyer(Request $request, string $number): Order

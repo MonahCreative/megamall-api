@@ -10,7 +10,10 @@ use App\Filament\Support\Attempt;
 use App\Services\ReturnService;
 use App\Models\Order;
 use App\Services\OrderWorkflow;
+use App\Services\Payments\PaymentService;
 use App\Support\Money;
+use App\Support\PaymentChannels;
+use App\Support\Phone;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -30,6 +33,8 @@ class OrderActions
     public static function all(): array
     {
         return [
+            static::confirmLipaPayment(),
+            static::rejectLipaPayment(),
             static::confirm(),
             static::pack(),
             static::ship(),
@@ -117,6 +122,70 @@ class OrderActions
             });
     }
 
+    /** The customer paid to the Lipa Namba: staff found the money in their mobile money messages. */
+    public static function confirmLipaPayment(): Action
+    {
+        return Action::make('confirmLipaPayment')
+            ->label('Confirm payment')
+            ->icon(Heroicon::OutlinedCheckBadge)
+            ->color('success')
+            ->visible(fn (Order $record) => $record->paymentToCheck() !== null)
+            ->requiresConfirmation()
+            ->modalIcon(Heroicon::OutlinedBanknotes)
+            ->modalHeading(fn (Order $record) => 'Did you receive '.Money::tzs($record->paymentToCheck()?->amount ?? $record->total).'?')
+            ->modalDescription(fn (Order $record) => static::paymentToCheckText($record).' Only confirm if you can see this exact transaction and amount in your mobile money messages.')
+            ->modalSubmitActionLabel('Yes, money received')
+            ->action(function (Order $record) {
+                static::run(function () use ($record) {
+                    $payment = $record->paymentToCheck();
+                    throw_unless($payment, ValidationException::withMessages(['payment' => 'This payment was already checked.']));
+                    app(PaymentService::class)->confirmLipaNamba($payment, auth()->id());
+                }, 'Payment confirmed. The customer gets an SMS receipt.');
+            });
+    }
+
+    /** Staff could not find the money: the customer is told and can send the right transaction ID. */
+    public static function rejectLipaPayment(): Action
+    {
+        return Action::make('rejectLipaPayment')
+            ->label('Payment not found')
+            ->icon(Heroicon::OutlinedXMark)
+            ->color('danger')
+            ->visible(fn (Order $record) => $record->paymentToCheck() !== null)
+            ->modalHeading('Payment not found')
+            ->modalDescription(fn (Order $record) => static::paymentToCheckText($record).' The customer gets an SMS and can send the correct transaction ID. The order is cancelled if they do not pay in time.')
+            ->schema([
+                Select::make('reason')
+                    ->label('What is wrong?')
+                    ->options([
+                        'no payment with this transaction ID' => 'No payment with this transaction ID',
+                        'the amount paid is less than the order total' => 'Amount is less than the order total',
+                        'the payment was sent to a different number' => 'Paid to a different number',
+                    ])
+                    ->required(),
+            ])
+            ->modalSubmitActionLabel('Tell the customer')
+            ->action(function (Order $record, array $data) {
+                static::run(function () use ($record, $data) {
+                    $payment = $record->paymentToCheck();
+                    throw_unless($payment, ValidationException::withMessages(['payment' => 'This payment was already checked.']));
+                    app(PaymentService::class)->rejectLipaNamba($payment, $data['reason'], auth()->id());
+                }, 'Customer told that the payment was not found');
+            });
+    }
+
+    private static function paymentToCheckText(Order $record): string
+    {
+        $payment = $record->paymentToCheck();
+        if (! $payment) {
+            return '';
+        }
+
+        return PaymentChannels::label($payment->channel).' transaction '.$payment->external_id
+            .' from '.($payment->phone ? Phone::display($payment->phone) : 'unknown number')
+            .', for '.Money::tzs($payment->amount).'.';
+    }
+
     public static function confirm(): Action
     {
         return Action::make('confirm')
@@ -194,7 +263,8 @@ class OrderActions
             ->label('Record payment')
             ->icon(Heroicon::OutlinedBanknotes)
             ->color('success')
-            ->visible(fn (Order $record) => app(OrderWorkflow::class)->canRecordPayment($record))
+            // While a Lipa Namba payment waits for checking, use "Confirm payment" instead.
+            ->visible(fn (Order $record) => app(OrderWorkflow::class)->canRecordPayment($record) && $record->paymentToCheck() === null)
             ->modalHeading(fn (Order $record) => 'Record payment of '.Money::tzs($record->total))
             ->modalDescription('Use this when the customer paid outside the automatic checkout, for example to your Lipa number or in cash.')
             ->schema([

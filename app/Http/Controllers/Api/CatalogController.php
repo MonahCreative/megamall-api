@@ -15,6 +15,7 @@ use App\Services\BackInStockNotifier;
 use App\Services\PricingService;
 use App\Services\ReviewService;
 use App\Services\SectionService;
+use App\Support\LipaNamba;
 use App\Support\Theme;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,6 +40,10 @@ class CatalogController extends Controller
             'theme' => collect(Theme::colours())->mapWithKeys(fn ($colour, $key) => [str_replace('theme_', '', $key) => $colour]),
             'payment_channels' => collect(config('payments.channels'))
                 ->map(fn ($label, $key) => ['key' => $key, 'label' => $label])->values(),
+            // How upcountry orders are paid: "lipa_namba" (pay to the shop's till number, staff confirm) or "automatic".
+            'payment_method' => LipaNamba::method(),
+            'lipa_numbers' => LipaNamba::enabled() ? LipaNamba::accounts() : [],
+            'lipa_note' => LipaNamba::enabled() ? LipaNamba::note() : null,
         ]);
     }
 

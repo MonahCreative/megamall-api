@@ -12,6 +12,8 @@ class PaymentResource extends JsonResource
     {
         return [
             'reference' => $this->reference,
+            // "lipa_namba" = checked by staff; anything else = automatic mobile money.
+            'method' => $this->gateway === 'lipa_namba' ? 'lipa_namba' : 'automatic',
             'channel' => $this->channel,
             'channel_label' => config("payments.channels.{$this->channel}", $this->channel),
             'amount' => $this->amount,

@@ -3,12 +3,15 @@
 namespace App\Filament\Pages;
 
 use App\Models\Setting;
+use App\Support\LipaNamba;
 use App\Support\SmsTemplates;
 use App\Support\Theme;
 use BackedEnum;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
@@ -20,6 +23,7 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -46,7 +50,7 @@ class StoreSettings extends Page
         'store_name', 'tagline', 'phone', 'whatsapp', 'email', 'ticker', 'prepaid_order_expiry_minutes',
         'return_window_days', 'auto_approve_reviews', 'delivery_note', 'theme_primary', 'theme_dark', 'theme_sale',
         'sms_enabled', 'sms_templates', 'staff_alert_emails', 'staff_alert_sound', 'business_address', 'tin',
-        'low_stock_level', 'reorder_cover_days',
+        'low_stock_level', 'reorder_cover_days', 'payment_method', 'lipa_numbers', 'lipa_note',
     ];
 
     private const BOOLEANS = ['auto_approve_reviews', 'sms_enabled', 'staff_alert_sound'];
@@ -61,6 +65,8 @@ class StoreSettings extends Page
             'staff_alert_sound' => true,
             'low_stock_level' => 5,
             'reorder_cover_days' => 30,
+            'payment_method' => LipaNamba::METHOD,
+            'lipa_note' => LipaNamba::DEFAULT_NOTE,
             ...collect(Setting::allValues())->only(self::KEYS)->all(),
             ...Theme::colours(),
             'sms_templates' => SmsTemplates::all(),
@@ -96,7 +102,7 @@ class StoreSettings extends Page
                             ->maxLength(30),
                     ]),
                 Section::make('Customer SMS')
-                    ->description(new HtmlString('Messages customers get as their order moves along. Until an SMS account is connected they are only saved under <strong>Store › SMS outbox</strong>, not sent. You can use: {first_name} {name} {order} {total} {area} {tracking} {reason} {minutes} {store_name} {store_phone} {track_url} {return_days}'))
+                    ->description(new HtmlString('Messages customers get as their order moves along. Until an SMS account is connected they are only saved under <strong>Store › SMS outbox</strong>, not sent. You can use: {first_name} {name} {order} {total} {area} {tracking} {reason} {minutes} {store_name} {store_phone} {track_url} {return_days} {lipa} (your Lipa Namba) {transaction}'))
                     ->collapsible()
                     ->collapsed()
                     ->schema([
@@ -218,7 +224,52 @@ class StoreSettings extends Page
                             ->inline(false),
                     ]),
                 Section::make('Mobile money orders')
+                    ->description('Customers outside Dar es Salaam pay before their order is sent.')
                     ->schema([
+                        Radio::make('payment_method')
+                            ->label('How customers pay')
+                            ->options([
+                                LipaNamba::METHOD => 'Lipa Namba',
+                                LipaNamba::AUTOMATIC => 'Automatic mobile money (AzamPay)',
+                            ])
+                            ->descriptions([
+                                LipaNamba::METHOD => 'Customers pay to your till number and type the transaction ID. Staff check it in the mobile money messages and press "Confirm payment".',
+                                LipaNamba::AUTOMATIC => 'Customers get a PIN prompt and the payment confirms itself. Only after AzamPay approves your business and the live keys are in .env.',
+                            ])
+                            ->live()
+                            ->required(),
+                        Repeater::make('lipa_numbers')
+                            ->label('Your Lipa Namba')
+                            ->helperText('Shown to customers exactly as entered. Add one for each network you have a till number on. Until you add one, customers are asked to call you to pay.')
+                            ->visible(fn (Get $get) => $get('payment_method') === LipaNamba::METHOD)
+                            ->schema([
+                                Select::make('channel')
+                                    ->label('Network')
+                                    ->options(config('payments.channels'))
+                                    ->required(),
+                                TextInput::make('number')
+                                    ->label('Lipa Namba')
+                                    ->placeholder('5123456')
+                                    ->regex('/^\d{5,12}$/')
+                                    ->validationMessages(['regex' => 'Digits only, as given by the network, e.g. 5123456.'])
+                                    ->required(),
+                                TextInput::make('name')
+                                    ->label('Name customers see when paying')
+                                    ->placeholder('MEGA MALL TANZANIA')
+                                    ->maxLength(60)
+                                    ->required(),
+                            ])
+                            ->columns(3)
+                            ->maxItems(4)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Add a Lipa Namba'),
+                        Textarea::make('lipa_note')
+                            ->label('Note for customers after they send the transaction ID')
+                            ->visible(fn (Get $get) => $get('payment_method') === LipaNamba::METHOD)
+                            ->rows(2)
+                            ->maxLength(300)
+                            ->required(),
                         TextInput::make('prepaid_order_expiry_minutes')
                             ->label('Cancel unpaid orders after (minutes)')
                             ->helperText('Customers outside Dar es Salaam must pay within this time, or the order is cancelled and the stock released.')
@@ -276,6 +327,16 @@ class StoreSettings extends Page
             }
             if ($key === 'staff_alert_emails') {
                 $value = implode(', ', preg_split('/[\s,;]+/', (string) $value, -1, PREG_SPLIT_NO_EMPTY));
+            }
+            if (in_array($key, ['lipa_numbers', 'lipa_note'], true) && ! array_key_exists($key, $data)) {
+                continue; // hidden while "Automatic" is chosen: keep what was saved
+            }
+            if ($key === 'lipa_numbers') {
+                $value = collect($value ?? [])->map(fn (array $row) => [
+                    'channel' => $row['channel'] ?? null,
+                    'number' => preg_replace('/\D/', '', (string) ($row['number'] ?? '')),
+                    'name' => trim((string) ($row['name'] ?? '')),
+                ])->values()->all();
             }
             if (str_starts_with($key, 'theme_')) {
                 $value = strtolower((string) $value);

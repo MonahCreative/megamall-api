@@ -5,9 +5,13 @@ namespace App\Livewire;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
 use App\Filament\Resources\Orders\OrderResource;
+use App\Enums\PaymentStatus;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\Setting;
+use App\Support\LipaNamba;
 use App\Support\Money;
+use App\Support\PaymentChannels;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -26,6 +30,9 @@ class NewOrderAlert extends Component
 
     /** @var array<int, int> orders already announced, so none is shown twice */
     public array $announced = [];
+
+    /** @var array<int, int> Lipa Namba payments already announced */
+    public array $announcedPayments = [];
 
     public function mount(): void
     {
@@ -51,7 +58,37 @@ class NewOrderAlert extends Component
             ->latest('id')
             ->get(['id', 'order_number', 'customer_name', 'total', 'payment_mode']);
 
+        $payments = Payment::query()
+            ->where('gateway', LipaNamba::GATEWAY)
+            ->where('status', PaymentStatus::Pending)
+            ->where('created_at', '>=', $since)
+            ->whereNotIn('id', $this->announcedPayments)
+            ->with('order:id,order_number,customer_name')
+            ->latest('id')
+            ->get();
+
+        if ($payments->isNotEmpty()) {
+            $this->announcedPayments = array_slice([...$this->announcedPayments, ...$payments->pluck('id')->all()], -100);
+
+            foreach ($payments->take(3) as $payment) {
+                Notification::make()
+                    ->title('Payment to check · '.$payment->order->order_number)
+                    ->body($payment->order->customer_name.' · '.Money::tzs($payment->amount).' · '.PaymentChannels::label($payment->channel).' ID '.$payment->external_id)
+                    ->icon(Heroicon::OutlinedBanknotes)
+                    ->warning()
+                    ->persistent()
+                    ->actions([
+                        Action::make('open')->label('Check payment')->button()->url(OrderResource::getUrl('view', ['record' => $payment->order])),
+                    ])
+                    ->send();
+            }
+        }
+
         if ($orders->isEmpty()) {
+            if ($payments->isNotEmpty()) {
+                $this->dispatch('mm-new-order');
+            }
+
             return;
         }
 

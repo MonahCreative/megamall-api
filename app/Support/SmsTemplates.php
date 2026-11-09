@@ -10,7 +10,7 @@ use App\Models\Setting;
 /**
  * The SMS customers get as their order moves along. Staff can reword them in Store settings.
  * Placeholders: {first_name} {name} {order} {total} {area} {tracking} {reason} {minutes}
- * {store_name} {store_phone} {track_url} {return_days}
+ * {store_name} {store_phone} {track_url} {return_days} {lipa} {transaction}
  */
 class SmsTemplates
 {
@@ -18,6 +18,7 @@ class SmsTemplates
         'order_placed_cod' => 'Order placed (Dar es Salaam, pay on delivery)',
         'order_placed_prepaid' => 'Order placed (other regions, waiting for payment)',
         'payment_received' => 'Mobile money payment received',
+        'payment_not_found' => 'Lipa Namba payment not found (use {transaction} {reason})',
         'order_confirmed' => 'Order confirmed after the call (pay on delivery)',
         'order_shipped' => 'Order sent out',
         'order_delivered' => 'Order delivered',
@@ -27,8 +28,9 @@ class SmsTemplates
 
     public const DEFAULTS = [
         'order_placed_cod' => 'Habari {first_name}! We received your order {order} ({total}). We will call you to confirm, then deliver. You pay when it arrives. Track: {track_url}',
-        'order_placed_prepaid' => 'Habari {first_name}! Order {order} ({total}) is reserved for you. Complete the mobile money payment within {minutes} minutes, or it will be cancelled.',
+        'order_placed_prepaid' => 'Habari {first_name}! Order {order} ({total}) is reserved for you. Complete the mobile money payment within {minutes} minutes, or it will be cancelled. {lipa}',
         'payment_received' => 'Asante {first_name}! We received {total} for order {order}. We are preparing it for dispatch and will SMS you when it is on the way.',
+        'payment_not_found' => 'Habari {first_name}, we could not find your payment {transaction} for order {order} ({reason}). Please check and send the correct transaction ID: {track_url}?order={order} or call {store_phone}.',
         'order_confirmed' => 'Order {order} is confirmed. We will deliver to {area} soon. Pay {total} when it arrives. Questions? Call {store_phone}.',
         'order_shipped' => 'Order {order} is on the way! {tracking} Questions? Call {store_phone}.',
         'order_delivered' => 'Order {order} delivered. Asante for shopping with {store_name}! Any problem? You can return items within {return_days} days.',
@@ -43,6 +45,9 @@ class SmsTemplates
 
         return array_replace(self::DEFAULTS, array_filter(is_array($saved) ? $saved : [], fn ($text) => filled($text)));
     }
+
+    /** The wording saved before Lipa Namba existed, upgraded automatically if staff never changed it. */
+    public const OLD_PREPAID = 'Habari {first_name}! Order {order} ({total}) is reserved for you. Complete the mobile money payment within {minutes} minutes, or it will be cancelled.';
 
     /** Messages about a product rather than an order (back in stock). */
     public static function renderForProduct(string $event, Product $product, ?ProductVariant $variant = null): string
@@ -77,6 +82,8 @@ class SmsTemplates
             '{store_phone}' => (string) ($settings['phone'] ?? ''),
             '{track_url}' => rtrim((string) config('megamall.frontend_url'), '/').'/track',
             '{return_days}' => (string) (int) ($settings['return_window_days'] ?? 7),
+            '{lipa}' => LipaNamba::enabled() && LipaNamba::accounts() !== [] ? 'Pay to '.LipaNamba::summary().'.' : '',
+            '{transaction}' => '',
             ...$extra,
         ];
 

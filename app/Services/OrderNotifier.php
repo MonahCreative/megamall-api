@@ -6,7 +6,11 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
 use App\Models\Order;
 use App\Models\Setting;
+use App\Models\Payment;
 use App\Notifications\NewOrderForStaff;
+use App\Notifications\PaymentToCheckForStaff;
+use Closure;
+use Illuminate\Notifications\Notification as BaseNotification;
 use App\Services\Sms\SmsService;
 use App\Support\SmsTemplates;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +45,18 @@ class OrderNotifier
         if ($alertStaff) {
             $this->alertStaff($order);
         }
+    }
+
+    /** A customer sent a Lipa Namba transaction ID: staff must check it. */
+    public function paymentToCheck(Payment $payment): void
+    {
+        $this->emailStaff($payment->order, fn () => new PaymentToCheckForStaff($payment->fresh(['order']) ?? $payment));
+    }
+
+    /** Staff could not find the customer's Lipa Namba payment. */
+    public function paymentNotFound(Order $order, Payment $payment, string $reason): void
+    {
+        $this->sms($order, 'payment_not_found', ['{reason}' => rtrim($reason, '.'), '{transaction}' => (string) $payment->external_id]);
     }
 
     public function confirmed(Order $order): void
@@ -83,6 +99,12 @@ class OrderNotifier
 
     private function alertStaff(Order $order): void
     {
+        $this->emailStaff($order, fn () => new NewOrderForStaff($order->fresh() ?? $order));
+    }
+
+    /** @param  Closure(): BaseNotification  $make  built after the database change is saved, so it shows the saved data */
+    private function emailStaff(Order $order, Closure $make): void
+    {
         $emails = collect(preg_split('/[\s,;]+/', (string) Setting::getValue('staff_alert_emails', '')))
             ->filter(fn ($email) => filter_var($email, FILTER_VALIDATE_EMAIL))
             ->unique()
@@ -93,9 +115,9 @@ class OrderNotifier
             return;
         }
 
-        DB::afterCommit(function () use ($order, $emails) {
+        DB::afterCommit(function () use ($emails, $make) {
             try {
-                Notification::route('mail', $emails)->notify(new NewOrderForStaff($order->fresh() ?? $order));
+                Notification::route('mail', $emails)->notify($make());
             } catch (Throwable $exception) {
                 report($exception); // e.g. email server down: the order is still fine
             }

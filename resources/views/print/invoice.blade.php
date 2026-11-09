@@ -100,6 +100,9 @@
                 @if ($payment->external_id) <span class="muted small">Ref: {{ $payment->external_id }}</span> @endif
             @elseif (! $paid)
                 <span class="muted">Not paid yet</span>
+                @if ($order->payment_mode->value === 'prepaid' && \App\Support\LipaNamba::enabled() && \App\Support\LipaNamba::accounts())
+                    <br><span class="small">Pay to {{ \App\Support\LipaNamba::summary() }}</span>
+                @endif
             @endif
         </div>
     </div>

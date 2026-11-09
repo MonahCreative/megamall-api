@@ -9,6 +9,7 @@ use App\Filament\Resources\Orders\Pages\ListOrders;
 use App\Filament\Resources\Orders\Pages\ViewOrder;
 use App\Models\Order;
 use App\Support\Money;
+use App\Support\PaymentChannels;
 use App\Support\Phone;
 use BackedEnum;
 use Filament\Actions\ActionGroup;
@@ -73,6 +74,23 @@ class OrderResource extends Resource
         return $schema
             ->columns(3)
             ->components([
+                Section::make('Payment to check')
+                    ->description('The customer says they paid to your Lipa Namba. Find this transaction in your mobile money messages, then press "Confirm payment" or "Payment not found" at the top.')
+                    ->icon(Heroicon::OutlinedBanknotes)
+                    ->iconColor('danger')
+                    ->columnSpanFull()
+                    ->columns(4)
+                    ->visible(fn (Order $record) => $record->paymentToCheck() !== null)
+                    ->schema([
+                        TextEntry::make('check_transaction')->label('Transaction ID')->weight('bold')->size('lg')->copyable()
+                            ->state(fn (Order $record) => $record->paymentToCheck()?->external_id),
+                        TextEntry::make('check_amount')->label('Amount to look for')->weight('bold')
+                            ->state(fn (Order $record) => Money::tzs($record->paymentToCheck()?->amount ?? $record->total)),
+                        TextEntry::make('check_channel')->label('Paid with')
+                            ->state(fn (Order $record) => PaymentChannels::label($record->paymentToCheck()?->channel)),
+                        TextEntry::make('check_phone')->label('Paid from')
+                            ->state(fn (Order $record) => ($phone = $record->paymentToCheck()?->phone) ? Phone::display($phone) : '-'),
+                    ]),
                 Section::make('Order')
                     ->columnSpan(2)
                     ->columns(3)
@@ -137,11 +155,18 @@ class OrderResource extends Resource
                         RepeatableEntry::make('payments')
                             ->hiddenLabel()
                             ->schema([
-                                Grid::make(5)->schema([
+                                Grid::make(6)->schema([
                                     TextEntry::make('created_at')->label('When')->dateTime('d M, H:i'),
-                                    TextEntry::make('channel')->formatStateUsing(fn (?string $state) => config("payments.channels.{$state}", ucfirst((string) $state))),
+                                    TextEntry::make('channel')->formatStateUsing(fn (?string $state) => PaymentChannels::label($state))
+                                        ->helperText(fn ($record) => match ($record->gateway) {
+                                            'lipa_namba' => 'Lipa Namba',
+                                            'manual' => 'Recorded by staff',
+                                            default => null,
+                                        }),
+                                    TextEntry::make('phone')->label('From')->formatStateUsing(fn (?string $state) => $state ? Phone::display($state) : '-')->placeholder('-'),
                                     TextEntry::make('amount')->formatStateUsing(fn ($state) => Money::tzs($state)),
-                                    TextEntry::make('status')->badge(),
+                                    TextEntry::make('status')->badge()
+                                        ->helperText(fn ($record) => $record->failure_reason),
                                     TextEntry::make('external_id')->label('Transaction ID')->placeholder('-')->copyable(),
                                 ]),
                             ]),
