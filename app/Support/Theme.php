@@ -17,6 +17,7 @@ class Theme
 
     /** Ready-made colour sets the admin can start from. */
     public const PRESETS = [
+        'logo' => ['label' => 'Mega Mall logo (navy and coral)', 'theme_primary' => '#1e2b5d', 'theme_dark' => '#141c3d', 'theme_sale' => '#e04848'],
         'orange' => ['label' => 'Mega Mall orange (original)', 'theme_primary' => '#e8650c', 'theme_dark' => '#0b1120', 'theme_sale' => '#e11d48'],
         'green' => ['label' => 'Fresh green', 'theme_primary' => '#15803d', 'theme_dark' => '#0f2a1d', 'theme_sale' => '#dc2626'],
         'blue' => ['label' => 'Ocean blue', 'theme_primary' => '#1d4ed8', 'theme_dark' => '#0b1736', 'theme_sale' => '#e11d48'],

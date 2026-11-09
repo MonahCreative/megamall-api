@@ -32,6 +32,11 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             ->profile(isSimple: false) // staff change their own name, email and password (top-right menu)
             ->brandName('Mega Mall Admin')
+            // Logo files live in public/images (light and dark versions), the tab icon too.
+            ->brandLogo(fn () => asset('images/logo.png'))
+            ->darkModeBrandLogo(fn () => asset('images/logo-white.png'))
+            ->brandLogoHeight('2.5rem')
+            ->favicon(fn () => asset('images/favicon.png'))
             // The admin follows the shop's main colour from Store settings (read on each request).
             ->colors(fn (): array => [
                 'primary' => Color::hex(Theme::colours()['theme_primary']),

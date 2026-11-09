@@ -19,7 +19,7 @@
         .sheet { max-width: 210mm; margin: 24px auto; background: #fff; padding: 16mm 14mm; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
         .top { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
         .logo { display: flex; gap: 12px; align-items: center; }
-        .mark { width: 48px; height: 48px; border-radius: 12px; background: {{ $brand }}; color: #fff; display: grid; place-items: center; font-weight: 900; font-size: 18px; letter-spacing: -1px; }
+        .mark { width: 52px; height: 52px; object-fit: contain; }
         .shop { font-size: 20px; font-weight: 800; }
         .muted { color: #6b7280; }
         .small { font-size: 12px; }
@@ -59,7 +59,7 @@
 <div class="sheet">
     <div class="top">
         <div class="logo">
-            <div class="mark">MM</div>
+            <img class="mark" src="{{ asset('images/favicon.png') }}" alt="">
             <div>
                 <div class="shop">{{ $store['store_name'] ?? 'Mega Mall Tanzania' }}</div>
                 <div class="muted small">
