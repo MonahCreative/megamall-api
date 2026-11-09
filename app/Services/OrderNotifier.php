@@ -103,6 +103,7 @@ class OrderNotifier
     private function alertStaff(Order $order): void
     {
         $this->emailStaff($order, fn () => new NewOrderForStaff($order->fresh() ?? $order));
+        app(StaffWhatsApp::class)->notifyOrder($order);
     }
 
     /** @param  Closure(): BaseNotification  $make  built after the database change is saved, so it shows the saved data */

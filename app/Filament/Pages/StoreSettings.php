@@ -3,7 +3,10 @@
 namespace App\Filament\Pages;
 
 use App\Models\Setting;
+use App\Rules\TanzanianPhone;
+use App\Services\StaffWhatsApp;
 use App\Support\LipaNamba;
+use App\Support\Phone;
 use App\Support\SmsTemplates;
 use App\Support\Theme;
 use BackedEnum;
@@ -49,7 +52,7 @@ class StoreSettings extends Page
     private const KEYS = [
         'store_name', 'tagline', 'phone', 'whatsapp', 'email', 'ticker', 'prepaid_order_expiry_minutes',
         'return_window_days', 'auto_approve_reviews', 'delivery_note', 'theme_primary', 'theme_dark', 'theme_sale',
-        'sms_enabled', 'sms_templates', 'staff_alert_emails', 'staff_alert_sound', 'business_address', 'tin',
+        'sms_enabled', 'sms_templates', 'staff_alert_emails', 'staff_alert_sound', 'staff_whatsapp', 'business_address', 'tin',
         'low_stock_level', 'reorder_cover_days', 'payment_method', 'lipa_numbers', 'lipa_note',
     ];
 
@@ -116,7 +119,7 @@ class StoreSettings extends Page
                             ->required())->values()->all(),
                     ]),
                 Section::make('Staff alerts')
-                    ->description('How staff hear about new orders: pay-on-delivery orders when placed, upcountry orders once paid.')
+                    ->description('How staff hear about new orders: when they are placed (and, with automatic payments, once upcountry orders are paid).')
                     ->columns(2)
                     ->schema([
                         TextInput::make('staff_alert_emails')
@@ -134,6 +137,20 @@ class StoreSettings extends Page
                             ->label('Pop-up and chime in the admin')
                             ->helperText('Checked every 20 seconds on any open admin page. Click the page once after opening it so the browser allows sound.')
                             ->inline(false),
+                        Repeater::make('staff_whatsapp')
+                            ->label('WhatsApp these phones')
+                            ->helperText(new HtmlString('Each phone activates itself once: save the CallMeBot number shown on <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener" class="underline">callmebot.com</a> in its contacts, send it <strong>I allow callmebot to send me messages</strong> on WhatsApp, and copy the key it replies with. Save, then use <strong>Send test WhatsApp</strong> at the top of this page.'))
+                            ->columnSpanFull()
+                            ->schema([
+                                TextInput::make('name')->label('Who')->placeholder('Shop manager')->maxLength(40),
+                                TextInput::make('phone')->label('WhatsApp number')->placeholder('0712 345 678')->tel()->required()->rule(new TanzanianPhone),
+                                TextInput::make('apikey')->label('CallMeBot key')->placeholder('123456')->required()->maxLength(40)->password()->revealable(),
+                            ])
+                            ->columns(3)
+                            ->maxItems(5)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Add a WhatsApp number'),
                     ]),
                 Section::make('Stock alerts')
                     ->description('Used by the dashboard "Reorder soon" list and Reports › Reorder list.')
@@ -310,6 +327,33 @@ class StoreSettings extends Page
             ]);
     }
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('testWhatsApp')
+                ->label('Send test WhatsApp')
+                ->icon(Heroicon::OutlinedChatBubbleLeftRight)
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Send a test WhatsApp to staff?')
+                ->modalDescription('Goes to every number saved under Staff alerts. Save your changes first.')
+                ->action(function () {
+                    $whatsapp = app(StaffWhatsApp::class);
+                    if ($whatsapp->recipients() === []) {
+                        Notification::make()->warning()->title('No WhatsApp numbers saved yet')->send();
+
+                        return;
+                    }
+
+                    foreach ($whatsapp->sendToAll('Mega Mall: test alert. New orders will arrive here like this.') as $phone => $problem) {
+                        $problem === null
+                            ? Notification::make()->success()->title('Sent to '.Phone::display($phone))->send()
+                            : Notification::make()->danger()->title('Not sent to '.Phone::display($phone))->body($problem)->persistent()->send();
+                    }
+                }),
+        ];
+    }
+
     public function save(): void
     {
         $data = $this->form->getState();
@@ -324,6 +368,13 @@ class StoreSettings extends Page
             }
             if ($key === 'sms_templates') {
                 $value = collect(SmsTemplates::EVENTS)->keys()->mapWithKeys(fn (string $event) => [$event => trim((string) ($value[$event] ?? ''))])->all();
+            }
+            if ($key === 'staff_whatsapp') {
+                $value = collect($value ?? [])->map(fn (array $row) => [
+                    'name' => trim((string) ($row['name'] ?? '')),
+                    'phone' => Phone::normalize($row['phone'] ?? null),
+                    'apikey' => trim((string) ($row['apikey'] ?? '')),
+                ])->values()->all();
             }
             if ($key === 'staff_alert_emails') {
                 $value = implode(', ', preg_split('/[\s,;]+/', (string) $value, -1, PREG_SPLIT_NO_EMPTY));

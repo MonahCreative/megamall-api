@@ -34,6 +34,8 @@ class SettingSeeder extends Seeder
             'sms_enabled' => true,
             'sms_templates' => \App\Support\SmsTemplates::DEFAULTS,
             'staff_alert_emails' => '',
+            // Staff phones that get a WhatsApp for each new order (CallMeBot), set under Store settings.
+            'staff_whatsapp' => [],
             'staff_alert_sound' => true,
             // Reorder list: re-order at this stock level, and buy enough for this many days of sales.
             'low_stock_level' => 5,
