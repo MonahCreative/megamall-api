@@ -98,7 +98,7 @@ class LipaNambaTest extends TestCase
         $this->assertNull($order->expires_at); // not cancelled while staff check it
 
         Notification::assertSentOnDemand(PaymentToCheckForStaff::class, fn (PaymentToCheckForStaff $mail) => $mail->payment->external_id === 'QJK3X7Y2AB');
-        Notification::assertSentOnDemandTimes(NewOrderForStaff::class, 0);
+        Notification::assertSentOnDemandTimes(NewOrderForStaff::class, 1); // when the order was placed
 
         // The shop page keeps waiting: nobody to ask but staff.
         $this->getJson("/api/orders/{$order->order_number}/payment-status?token={$order->access_token}")
@@ -137,7 +137,7 @@ class LipaNambaTest extends TestCase
         $this->assertSame('paid', $payment->status->value);
         $this->assertSame($this->admin->id, $payment->payload['checked_by']);
         $this->assertSame(1, SmsMessage::where('event', 'payment_received')->count());
-        Notification::assertSentOnDemandTimes(NewOrderForStaff::class, 0); // staff confirmed it themselves
+        Notification::assertSentOnDemandTimes(NewOrderForStaff::class, 1); // only when placed: staff confirmed it themselves
 
         $this->get('/admin/orders?tab=payment_to_check')->assertOk()->assertDontSee($order->order_number);
     }
@@ -221,5 +221,47 @@ class LipaNambaTest extends TestCase
     {
         $this->postJson('/api/payments/callback/lipa_namba', ['anything' => 1])->assertNotFound();
         $this->postJson('/api/payments/callback/fake', [])->assertNotFound();
+    }
+
+    public function test_staff_hear_about_new_upcountry_orders_and_record_the_payment_after_calling(): void
+    {
+        $order = $this->upcountryOrder();
+
+        // Staff hear about it straight away, to watch the business phone for the money.
+        Notification::assertSentOnDemand(NewOrderForStaff::class, function (NewOrderForStaff $mail) use ($order) {
+            $text = implode(' ', $mail->toMail(new \stdClass)->introLines).' '.implode(' ', $mail->toMail(new \stdClass)->outroLines);
+
+            return $mail->order->is($order) && str_contains($text, 'to be paid to your Lipa Namba') && str_contains($text, 'Record payment');
+        });
+
+        $this->actingAs($this->admin);
+        Livewire::test(ViewOrder::class, ['record' => $order->getRouteKey()])
+            ->callAction('recordPayment', data: ['channel' => 'mpesa', 'reference' => ' qjk3x7y2ab '])
+            ->assertNotified('Payment recorded');
+
+        $order->refresh();
+        $this->assertTrue($order->isPaid());
+        $this->assertSame('confirmed', $order->status->value);
+        $this->assertSame('QJK3X7Y2AB', Payment::sole()->external_id);
+        $this->assertSame(1, SmsMessage::where('event', 'payment_received')->count());
+
+        // The same mobile money payment cannot pay a second order.
+        $other = $this->upcountryOrder();
+        Livewire::test(ViewOrder::class, ['record' => $other->getRouteKey()])
+            ->callAction('recordPayment', data: ['channel' => 'mpesa', 'reference' => 'QJK3X7Y2AB'])
+            ->assertNotified('Not allowed');
+        $this->assertFalse($other->fresh()->isPaid());
+    }
+
+    public function test_cash_on_delivery_orders_are_unchanged(): void
+    {
+        $region = Region::where('name', 'Dar es Salaam')->first();
+        $this->postJson('/api/orders', [
+            'customer_name' => 'Neema Mushi', 'phone' => '0712345678', 'region_id' => $region->id, 'district_id' => $region->districts()->first()->id,
+            'area' => 'Sinza', 'address' => 'Near Sinza Mori', 'items' => [['product_id' => $this->kettle->id, 'quantity' => 1]],
+        ])->assertCreated()->assertJsonPath('data.payment_mode', 'cod');
+
+        Notification::assertSentOnDemandTimes(NewOrderForStaff::class, 1);
+        $this->assertSame(1, SmsMessage::where('event', 'order_placed_cod')->count());
     }
 }

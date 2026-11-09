@@ -53,10 +53,12 @@ class NewOrderAlert extends Component
             ->where('status', '!=', OrderStatus::Cancelled)
             ->whereNotIn('id', $this->announced)
             ->where(fn (Builder $query) => $query
-                ->where(fn (Builder $cod) => $cod->where('payment_mode', PaymentMode::CashOnDelivery)->where('created_at', '>=', $since))
+                ->where(fn (Builder $new) => $new
+                    ->when(! LipaNamba::enabled(), fn (Builder $codOnly) => $codOnly->where('payment_mode', PaymentMode::CashOnDelivery))
+                    ->where('created_at', '>=', $since))
                 ->orWhere(fn (Builder $paid) => $paid->where('payment_mode', PaymentMode::Prepaid)->where('paid_at', '>=', $since)))
             ->latest('id')
-            ->get(['id', 'order_number', 'customer_name', 'total', 'payment_mode']);
+            ->get(['id', 'order_number', 'customer_name', 'total', 'payment_mode', 'paid_at']);
 
         $payments = Payment::query()
             ->where('gateway', LipaNamba::GATEWAY)
@@ -96,9 +98,14 @@ class NewOrderAlert extends Component
 
         foreach ($orders->take(3) as $order) {
             $cod = $order->payment_mode === PaymentMode::CashOnDelivery;
+            $waiting = ! $cod && $order->paid_at === null;
             Notification::make()
-                ->title(($cod ? 'New order ' : 'Paid order ').$order->order_number)
-                ->body($order->customer_name.' · '.Money::tzs($order->total).($cod ? ' · pay on delivery' : ' · paid, ready to send'))
+                ->title(($cod || $waiting ? 'New order ' : 'Paid order ').$order->order_number)
+                ->body($order->customer_name.' · '.Money::tzs($order->total).match (true) {
+                    $cod => ' · pay on delivery',
+                    $waiting => ' · waiting for Lipa Namba payment',
+                    default => ' · paid, ready to send',
+                })
                 ->icon(Heroicon::OutlinedShoppingBag)
                 ->success()
                 ->persistent()

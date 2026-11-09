@@ -21,7 +21,10 @@ class LipaNamba
     /** Gateway name stored on payments made this way. */
     public const GATEWAY = 'lipa_namba';
 
-    public const DEFAULT_NOTE = 'We check payments every day from 8:00 to 20:00 and confirm them within 30 minutes. You will get an SMS once your payment is confirmed.';
+    public const DEFAULT_NOTE = 'We check payments every day from 8:00 to 20:00 and call you within 30 minutes to confirm your order.';
+
+    /** The note saved before staff started calling customers, upgraded automatically if never changed. */
+    public const OLD_NOTE = 'We check payments every day from 8:00 to 20:00 and confirm them within 30 minutes. You will get an SMS once your payment is confirmed.';
 
     public static function method(): string
     {

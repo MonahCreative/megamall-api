@@ -12,6 +12,7 @@ use App\Notifications\PaymentToCheckForStaff;
 use Closure;
 use Illuminate\Notifications\Notification as BaseNotification;
 use App\Services\Sms\SmsService;
+use App\Support\LipaNamba;
 use App\Support\SmsTemplates;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -31,8 +32,10 @@ class OrderNotifier
         $cod = $order->payment_mode === PaymentMode::CashOnDelivery;
         $this->sms($order, $cod ? 'order_placed_cod' : 'order_placed_prepaid');
 
-        if ($cod) {
-            $this->alertStaff($order); // prepaid orders alert staff once they are paid
+        // Pay-first orders: with Lipa Namba staff watch the business phone for the money, so they hear about
+        // the order now. With automatic payments they hear once it is paid.
+        if ($cod || LipaNamba::enabled()) {
+            $this->alertStaff($order);
         }
     }
 

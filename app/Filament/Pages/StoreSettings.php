@@ -265,7 +265,7 @@ class StoreSettings extends Page
                             ->reorderable(false)
                             ->addActionLabel('Add a Lipa Namba'),
                         Textarea::make('lipa_note')
-                            ->label('Note for customers after they send the transaction ID')
+                            ->label('Note shown under the Lipa Namba')
                             ->visible(fn (Get $get) => $get('payment_method') === LipaNamba::METHOD)
                             ->rows(2)
                             ->maxLength(300)

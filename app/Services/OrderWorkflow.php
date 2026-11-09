@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
+use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -100,6 +101,12 @@ class OrderWorkflow
     public function recordPayment(Order $order, string $channel, ?string $reference = null, bool $notify = true): void
     {
         $this->guard($this->canRecordPayment($order), 'This order is already paid or cancelled.');
+
+        // One mobile money payment can only pay for one order.
+        $reference = filled($reference) ? strtoupper(trim($reference)) : null;
+        if ($reference && ($used = Payment::query()->where('external_id', $reference)->where('status', '!=', PaymentStatus::Failed)->with('order:id,order_number')->first())) {
+            throw ValidationException::withMessages(['reference' => "Transaction ID {$reference} was already used for order {$used->order?->order_number}."]);
+        }
 
         DB::transaction(function () use ($order, $channel, $reference, $notify) {
             $order->payments()->create([

@@ -27,10 +27,15 @@ class NewOrderForStaff extends Notification
     {
         $order = $this->order->loadMissing(['items', 'region', 'district']);
         $cod = $order->payment_mode === PaymentMode::CashOnDelivery;
+        $waiting = ! $cod && ! $order->isPaid();
 
         $mail = (new MailMessage)
-            ->subject(($cod ? 'New order ' : 'Paid order ').$order->order_number.' · '.Money::tzs($order->total))
-            ->greeting($cod ? 'New pay-on-delivery order' : 'New paid order to send')
+            ->subject(($cod || $waiting ? 'New order ' : 'Paid order ').$order->order_number.' · '.Money::tzs($order->total))
+            ->greeting(match (true) {
+                $cod => 'New pay-on-delivery order',
+                $waiting => 'New order, waiting for Lipa Namba payment',
+                default => 'New paid order to send',
+            })
             ->line("**{$order->customer_name}** · ".($order->phone ? Phone::display($order->phone) : ''))
             ->line(collect([$order->area, $order->district?->name, $order->region?->name])->filter()->implode(', '));
 
@@ -39,8 +44,16 @@ class NewOrderForStaff extends Notification
         }
 
         return $mail
-            ->line('**Total: '.Money::tzs($order->total).'**'.($cod ? ' (to collect on delivery)' : ' (paid)'))
+            ->line('**Total: '.Money::tzs($order->total).'**'.match (true) {
+                $cod => ' (to collect on delivery)',
+                $waiting => ' (to be paid to your Lipa Namba)',
+                default => ' (paid)',
+            })
             ->action('Open the order', OrderResource::getUrl('view', ['record' => $order], panel: 'admin'))
-            ->line($cod ? 'Call the customer to confirm, then pack and send.' : 'Pack and send it.');
+            ->line(match (true) {
+                $cod => 'Call the customer to confirm, then pack and send.',
+                $waiting => 'When the money arrives on the business phone, press "Record payment" on the order and call the customer to confirm.',
+                default => 'Pack and send it.',
+            });
     }
 }

@@ -266,7 +266,7 @@ class OrderActions
             // While a Lipa Namba payment waits for checking, use "Confirm payment" instead.
             ->visible(fn (Order $record) => app(OrderWorkflow::class)->canRecordPayment($record) && $record->paymentToCheck() === null)
             ->modalHeading(fn (Order $record) => 'Record payment of '.Money::tzs($record->total))
-            ->modalDescription('Use this when the customer paid outside the automatic checkout, for example to your Lipa number or in cash.')
+            ->modalDescription('Use this once you can see the money on the business phone (Lipa Namba), or when it was paid in cash. Then call the customer to confirm.')
             ->schema([
                 Select::make('channel')
                     ->label('Paid with')
