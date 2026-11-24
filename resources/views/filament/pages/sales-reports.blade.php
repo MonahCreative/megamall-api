@@ -33,8 +33,7 @@
     {{ $this->form }}
 
     <p class="mm-rep-empty" style="padding:0">
-        Showing <strong>{{ $range->start->format('d M Y') }} – {{ $range->end->format('d M Y') }}</strong>,
-        {{ strtolower(\App\Filament\Pages\SalesReports::CHANNELS[$report->channel] ?? '') }}.
+        Showing <strong>{{ $range->start->format('d M Y') }} – {{ $range->end->format('d M Y') }}</strong>.
         A sale counts on the day it was paid. Cancelled orders are not included.
     </p>
 
@@ -52,7 +51,6 @@
         <div class="mm-rep-card">
             <span class="label">Orders</span>
             <span class="value">{{ number_format($summary['orders']) }}</span>
-            <span class="hint">{{ $summary['online_orders'] }} online · {{ $summary['pos_orders'] }} in shop</span>
         </div>
         <div class="mm-rep-card">
             <span class="label">Average order</span>
@@ -69,7 +67,7 @@
     @if ($summary['items_without_cost'] > 0)
         <div class="mm-rep-warn">
             {{ $summary['items_without_cost'] }} item(s) sold have no cost price, so they count as pure profit.
-            Add cost prices under Products (or record purchases) to make profit accurate.
+            Add cost prices under Products (or when adding stock) to make profit accurate.
         </div>
     @endif
 

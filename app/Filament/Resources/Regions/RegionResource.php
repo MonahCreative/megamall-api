@@ -28,7 +28,7 @@ class RegionResource extends Resource
 {
     protected static ?string $model = Region::class;
 
-    protected static ?string $navigationLabel = 'Regions and fees';
+    protected static ?string $navigationLabel = 'Regions';
 
     protected static string | UnitEnum | null $navigationGroup = 'Delivery';
 

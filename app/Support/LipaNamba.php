@@ -5,18 +5,12 @@ namespace App\Support;
 use App\Models\Setting;
 
 /**
- * How upcountry customers pay, chosen under Store settings > Mobile money orders:
- *
- *  - "lipa_namba": the customer pays to the shop's own till number(s) and types the transaction ID;
- *    staff check their mobile money messages and press "Confirm payment". No payment company needed.
- *  - "automatic": a payment gateway (AzamPay) sends a PIN prompt and confirms the payment by itself.
- *    Needs the gateway's live keys in .env (PAYMENT_DRIVER).
+ * How upcountry customers pay: to the shop's own till number(s) (Lipa Namba), then they type the transaction ID.
+ * Staff check their mobile money messages and press "Confirm payment". Numbers are set under Store settings.
  */
 class LipaNamba
 {
     public const METHOD = 'lipa_namba';
-
-    public const AUTOMATIC = 'automatic';
 
     /** Gateway name stored on payments made this way. */
     public const GATEWAY = 'lipa_namba';
@@ -25,16 +19,6 @@ class LipaNamba
 
     /** The note saved before staff started calling customers, upgraded automatically if never changed. */
     public const OLD_NOTE = 'We check payments every day from 8:00 to 20:00 and confirm them within 30 minutes. You will get an SMS once your payment is confirmed.';
-
-    public static function method(): string
-    {
-        return Setting::getValue('payment_method', self::METHOD) === self::AUTOMATIC ? self::AUTOMATIC : self::METHOD;
-    }
-
-    public static function enabled(): bool
-    {
-        return self::method() === self::METHOD;
-    }
 
     /** @return array<int, array{channel: string, label: string, number: string, name: string}> */
     public static function accounts(): array
@@ -59,7 +43,7 @@ class LipaNamba
         return (string) (Setting::getValue('lipa_note') ?: self::DEFAULT_NOTE);
     }
 
-    /** One line for SMS and invoices, e.g. "M-Pesa Lipa Namba 123456 (MEGA MALL)". */
+    /** One line for invoices, e.g. "M-Pesa Lipa Namba 123456 (MEGA MALL)". */
     public static function summary(): string
     {
         return collect(self::accounts())

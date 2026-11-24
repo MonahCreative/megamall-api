@@ -42,7 +42,7 @@ HTML,
 <li><strong>Email:</strong> {email}</li>
 </ul>
 <p><strong>Opening hours:</strong> Monday to Saturday, 8:00 to 20:00. Sunday, 10:00 to 16:00.</p>
-<p>If you are asking about an order, please have your order number ready (it starts with MM and is in your SMS).</p>
+<p>If you are asking about an order, please have your order number ready (it starts with MM and is shown when you place your order).</p>
 HTML,
             ],
             [
@@ -64,12 +64,12 @@ HTML,
 </ul>
 <h2>How to return</h2>
 <ol>
-<li>Go to <strong>Return an item</strong> on our website, enter your order number and phone number, and choose what you are returning and why. You can also call or WhatsApp us on {phone}.</li>
+<li>Call or WhatsApp us on {phone} with your order number, what you are returning and why.</li>
 <li>We review your request and contact you to arrange how the item comes back to us.</li>
 <li>When we receive and check the item, we give you a replacement or refund your money.</li>
 </ol>
 <h2>Refunds</h2>
-<p>Refunds are sent by mobile money (or in cash at our shop) for the price you paid for the returned items. If the item was faulty or we sent the wrong one, we also cover the cost of sending it back. If you changed your mind, the transport cost of the return is yours.</p>
+<p>Refunds are sent by mobile money for the price you paid for the returned items. If the item was faulty or we sent the wrong one, we also cover the cost of sending it back. If you changed your mind, the transport cost of the return is yours.</p>
 HTML,
             ],
             [
@@ -78,7 +78,7 @@ HTML,
                 'body' => <<<'HTML'
 <p>These terms apply when you buy from {store_name}. By placing an order you agree to them.</p>
 <h2>1. Orders</h2>
-<p>When you place an order we send you an order number by SMS. We may call you to confirm it. We can cancel an order if an item is out of stock, if the price shown was clearly wrong, or if we cannot reach you to confirm. If you already paid for a cancelled order, we refund you in full.</p>
+<p>When you place an order you get an order number on the screen. We call you to confirm it. We can cancel an order if an item is out of stock, if the price shown was clearly wrong, or if we cannot reach you to confirm. If you already paid for a cancelled order, we refund you in full.</p>
 <h2>2. Prices</h2>
 <p>Prices are in Tanzanian shillings (TZS) and include VAT where it applies. The price you pay is the one shown at checkout when you place the order.</p>
 <h2>3. Payment</h2>
@@ -87,7 +87,7 @@ HTML,
 <li><strong>Other regions:</strong> you pay the full price by mobile money (M-Pesa, Mixx by Yas, Airtel Money or HaloPesa) before we send the order. Orders not paid within the time shown at checkout are cancelled automatically.</li>
 </ul>
 <h2>4. Delivery</h2>
-<p>Delivery costs are not included in our prices. In Dar es Salaam you pay the rider directly. For other regions we send your parcel by bus, and you pay the transport cost when you collect it. Delivery times are estimates and can be affected by weather, roads or the bus company.</p>
+<p>Delivery in Dar es Salaam is free. For other regions we send your parcel by bus, and you pay the bus fare when you collect it. Delivery times are estimates and can be affected by weather, roads or the bus company.</p>
 <p>Please check your item when you receive it. Once you have accepted delivery, or collected the parcel from the bus office, the item is your responsibility.</p>
 <h2>5. Returns and refunds</h2>
 <p>See our <strong>Return policy</strong>. Your rights under Tanzanian consumer protection law are not affected.</p>
@@ -110,13 +110,13 @@ HTML,
 </ul>
 <h2>How we use it</h2>
 <ul>
-<li>To process, deliver and support your orders, including SMS updates about your order.</li>
+<li>To process, deliver and support your orders, including phone calls and WhatsApp messages about your order.</li>
 <li>To handle returns, refunds and questions.</li>
 <li>To keep records required by law, such as tax records.</li>
 </ul>
 <p>We do not sell your information.</p>
 <h2>Who we share it with</h2>
-<p>Only with the people needed to complete your order: our riders and the bus company carrying your parcel (name, phone, delivery area), the mobile money and payment providers that process your payment, and the SMS provider that sends your order updates. We may also share information when the law requires it.</p>
+<p>Only with the people needed to complete your order: our riders and the bus company carrying your parcel (name, phone, delivery area), and the mobile money providers that process your payment. We may also share information when the law requires it.</p>
 <h2>How long we keep it</h2>
 <p>We keep order records for as long as the law requires for business and tax records, and delete or anonymise information we no longer need.</p>
 <h2>Your rights</h2>

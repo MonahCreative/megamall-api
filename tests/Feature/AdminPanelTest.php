@@ -6,9 +6,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Region;
 use App\Models\User;
-use App\Services\InventoryService;
 use App\Services\OrderService;
-use App\Services\PosService;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\DemoActivitySeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,9 +57,6 @@ class AdminPanelTest extends TestCase
             'items' => [['product_id' => Product::where('stock', '>', 0)->whereDoesntHave('variants')->first()->id, 'quantity' => 1]],
         ]);
 
-        $sale = app(PosService::class)->sell([['product_id' => Product::where('stock', '>', 0)->whereDoesntHave('variants')->first()->id, 'quantity' => 1]], 'cash');
-        $purchase = app(InventoryService::class)->receivePurchase([], [['product_id' => Product::first()->id, 'product_variant_id' => Product::first()->variants()->value('id'), 'quantity' => 3, 'unit_cost' => 1000]]);
-
         $pages = [
             '/admin',
             '/admin/orders',
@@ -75,26 +70,12 @@ class AdminPanelTest extends TestCase
             '/admin/regions',
             '/admin/regions/'.$region->id.'/edit',
             '/admin/store-settings',
-            '/admin/pos',
-            '/admin/pos-orders',
-            '/admin/pos-orders/'.$sale->id,
-            '/pos-receipt/'.$sale->id,
-            '/admin/returns',
             '/admin/refunds',
-            '/admin/purchases',
-            '/admin/purchases/create',
-            '/admin/purchases/'.$purchase->id,
-            '/admin/suppliers',
-            '/admin/damages',
             '/admin/stock',
             '/admin/stock-movements',
-            '/admin/reviews',
             '/admin/promotions',
             '/admin/product-sections',
             '/admin/reports',
-            '/admin/cash-ups',
-            '/admin/cash-ups/create',
-            '/admin/sms-outbox',
             '/admin/shop-pages',
             '/admin/shop-pages/create',
             '/print/orders/'.$order->id.'/invoice',
@@ -105,6 +86,11 @@ class AdminPanelTest extends TestCase
 
         foreach ($pages as $page) {
             $this->actingAs($this->admin)->get($page)->assertOk();
+        }
+
+        // Removed features stay gone.
+        foreach (['/admin/pos', '/admin/pos-orders', '/admin/cash-ups', '/admin/purchases', '/admin/suppliers', '/admin/damages', '/admin/reviews', '/admin/returns', '/admin/sms-outbox'] as $page) {
+            $this->actingAs($this->admin)->get($page)->assertNotFound();
         }
 
         $this->assertInstanceOf(Order::class, $order);

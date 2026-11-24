@@ -10,10 +10,8 @@ use App\Models\ContentPage;
 use App\Models\Product;
 use App\Models\ProductSection;
 use App\Models\Setting;
-use App\Rules\TanzanianPhone;
 use App\Services\BackInStockNotifier;
 use App\Services\PricingService;
-use App\Services\ReviewService;
 use App\Services\SectionService;
 use App\Support\LipaNamba;
 use App\Support\Theme;
@@ -23,7 +21,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class CatalogController extends Controller
 {
-    /** GET /api/store — store name, phone, WhatsApp, ticker messages, payment channels. */
+    /** GET /api/store — store name, phone, WhatsApp, colours and how upcountry orders pay (Lipa Namba). */
     public function store(): JsonResponse
     {
         $s = Setting::allValues();
@@ -34,40 +32,30 @@ class CatalogController extends Controller
             'phone' => $s['phone'] ?? null,
             'whatsapp' => $s['whatsapp'] ?? null,
             'email' => $s['email'] ?? null,
-            'ticker' => $s['ticker'] ?? [],
-            'delivery_note' => $s['delivery_note'] ?? 'Delivery is not included in our prices. In Dar es Salaam you pay the rider directly when your order arrives. For other regions we send your parcel by bus, and you pay the transport cost when you collect it.',
             'return_window_days' => (int) ($s['return_window_days'] ?? 7),
             'theme' => collect(Theme::colours())->mapWithKeys(fn ($colour, $key) => [str_replace('theme_', '', $key) => $colour]),
             'payment_channels' => collect(config('payments.channels'))
                 ->map(fn ($label, $key) => ['key' => $key, 'label' => $label])->values(),
-            // How upcountry orders are paid: "lipa_namba" (pay to the shop's till number, staff confirm) or "automatic".
-            'payment_method' => LipaNamba::method(),
-            'lipa_numbers' => LipaNamba::enabled() ? LipaNamba::accounts() : [],
-            'lipa_note' => LipaNamba::enabled() ? LipaNamba::note() : null,
+            // Upcountry orders are paid to the shop's Lipa Namba and checked by staff.
+            'payment_method' => LipaNamba::METHOD,
+            'lipa_numbers' => LipaNamba::accounts(),
+            'lipa_note' => LipaNamba::note(),
         ]);
     }
 
-    /** GET /api/categories — top-level categories with their sub-categories and product counts. */
+    /** GET /api/categories — visible categories in menu order, with how many visible products each has. */
     public function categories(): JsonResponse
     {
         $categories = Category::active()
-            ->whereNull('parent_id')
-            ->with(['children' => fn ($q) => $q->active()->withCount(['products' => fn ($p) => $p->active()])])
             ->withCount(['products' => fn ($q) => $q->active()])
             ->orderBy('sort_order')
+            ->orderBy('name')
             ->get()
             ->map(fn (Category $c) => [
                 'id' => $c->id,
                 'name' => $c->name,
                 'slug' => $c->slug,
-                'image' => $c->imageUrl(),
-                'product_count' => $c->products_count + $c->children->sum('products_count'),
-                'children' => $c->children->map(fn (Category $child) => [
-                    'id' => $child->id,
-                    'name' => $child->name,
-                    'slug' => $child->slug,
-                    'product_count' => $child->products_count,
-                ]),
+                'product_count' => $c->products_count,
             ]);
 
         return response()->json(['data' => $categories]);
@@ -86,12 +74,11 @@ class CatalogController extends Controller
             'ids' => ['nullable', 'string', 'max:1000'], // "12,5,40": saved items / recently viewed
         ]);
 
-        $query = Product::active()->with(['mainImage', 'category', 'variants'])->withRatings();
+        $query = Product::active()->with(['mainImage', 'category', 'variants']);
 
         if ($slug = $request->string('category')->toString()) {
             $category = Category::active()->where('slug', $slug)->firstOrFail();
-            $ids = $category->children()->pluck('id')->push($category->id);
-            $query->whereIn('category_id', $ids);
+            $query->where('category_id', $category->id);
         }
 
         if ($term = $request->string('q')->trim()->toString()) {
@@ -124,7 +111,7 @@ class CatalogController extends Controller
         );
     }
 
-    /** POST /api/products/{slug}/notify {phone, variant_id?} — "SMS me when it's back in stock". */
+    /** POST /api/products/{slug}/notify {phone, variant_id?} — "Tell me when it's back in stock" (staff contact them). */
     public function notifyWhenBack(Request $request, string $slug, BackInStockNotifier $notifier): JsonResponse
     {
         $data = $request->validate([
@@ -135,7 +122,7 @@ class CatalogController extends Controller
         $product = Product::active()->where('slug', $slug)->firstOrFail();
         $notifier->request($product, $data['phone'], $data['variant_id'] ?? null);
 
-        return response()->json(['message' => 'Done! We will SMS you as soon as it is back in stock.'], 201);
+        return response()->json(['message' => 'Done! We will contact you on this number as soon as it is back in stock.'], 201);
     }
 
     /** GET /api/sitemap — every public address, for the shop's sitemap.xml (Google). */
@@ -157,32 +144,19 @@ class CatalogController extends Controller
         $product = Product::active()
             ->where('slug', $slug)
             ->with(['images', 'mainImage', 'category', 'variants'])
-            ->withRatings()
             ->firstOrFail();
 
         $related = Product::active()
             ->where('category_id', $product->category_id)
             ->whereKeyNot($product->id)
             ->with(['mainImage', 'category', 'variants'])
-            ->withRatings()
             ->inRandomOrder()
             ->limit(8)
             ->get();
 
-        $reviews = $product->reviews()->approved()->latest()->limit(20)->get()->map(fn ($review) => [
-            'name' => $review->customer_name,
-            'rating' => $review->rating,
-            'comment' => $review->comment,
-            'reply' => $review->reply,
-            'date' => $review->created_at->toDateString(),
-        ]);
 
         return response()->json([
             'data' => ProductResource::make($product),
-            'reviews' => [
-                'summary' => app(ReviewService::class)->summary($product),
-                'items' => $reviews,
-            ],
             'related' => ProductResource::collection($related),
         ]);
     }
@@ -211,26 +185,6 @@ class CatalogController extends Controller
             ->values();
 
         return response()->json(['data' => $data]);
-    }
-
-    /** POST /api/products/{slug}/reviews {order_number, phone, rating, comment} — verified buyers only. */
-    public function review(Request $request, string $slug, ReviewService $reviews): JsonResponse
-    {
-        $data = $request->validate([
-            'order_number' => ['required', 'string', 'max:30'],
-            'phone' => ['required', 'string', new TanzanianPhone],
-            'rating' => ['required', 'integer', 'min:1', 'max:5'],
-            'comment' => ['nullable', 'string', 'max:1000'],
-        ]);
-
-        $product = Product::active()->where('slug', $slug)->firstOrFail();
-        $review = $reviews->submit($product, $data['order_number'], $data['phone'], (int) $data['rating'], $data['comment'] ?? null);
-
-        return response()->json([
-            'message' => $review->status->value === 'approved'
-                ? 'Thank you! Your review is now on the product page.'
-                : 'Thank you! Your review will appear after we check it.',
-        ], 201);
     }
 
     /** GET /api/banners — hero slider. */

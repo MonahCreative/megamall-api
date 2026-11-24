@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Order extends Model
 {
     protected $fillable = [
-        'order_number', 'access_token', 'channel', 'user_id', 'served_by', 'customer_name', 'phone', 'email',
+        'order_number', 'access_token', 'channel', 'user_id', 'customer_name', 'phone', 'email',
         'region_id', 'district_id', 'area', 'address', 'notes',
         'payment_mode', 'payment_status', 'status',
         'subtotal', 'delivery_fee', 'discount', 'total', 'paid_at', 'delivered_at', 'expires_at', 'tracking_note',
@@ -53,34 +53,15 @@ class Order extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function servedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'served_by');
-    }
-
-    public function returnRequests(): HasMany
-    {
-        return $this->hasMany(ReturnRequest::class);
-    }
-
     public function refunds(): HasMany
     {
         return $this->hasMany(Refund::class);
     }
 
+    /** Orders from the website. (Older databases may still hold shop-counter sales with channel "pos".) */
     public function scopeOnline(Builder $query): void
     {
         $query->where('channel', 'online');
-    }
-
-    public function scopePos(Builder $query): void
-    {
-        $query->where('channel', 'pos');
-    }
-
-    public function isPos(): bool
-    {
-        return $this->channel === 'pos';
     }
 
     public function refundedAmount(): int

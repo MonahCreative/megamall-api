@@ -142,7 +142,6 @@ class OrderService
             }
 
             $order->update(['status' => OrderStatus::Cancelled, 'tracking_note' => $reason]);
-            app(OrderNotifier::class)->cancelled($order, $reason);
         });
     }
 

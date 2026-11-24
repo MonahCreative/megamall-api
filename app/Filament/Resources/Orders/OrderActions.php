@@ -4,10 +4,7 @@ namespace App\Filament\Resources\Orders;
 
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
-use App\Enums\ReturnStatus;
-use App\Filament\Resources\Returns\ReturnActions;
 use App\Filament\Support\Attempt;
-use App\Services\ReturnService;
 use App\Models\Order;
 use App\Services\OrderWorkflow;
 use App\Services\Payments\PaymentService;
@@ -43,8 +40,7 @@ class OrderActions
             static::whatsapp(),
             static::printInvoice(),
             static::printPackingSlip(),
-            static::startReturn(),
-            static::refundCancelled(),
+            static::refund(),
             static::cancel(),
         ];
     }
@@ -72,51 +68,31 @@ class OrderActions
             ->openUrlInNewTab();
     }
 
-    /** Staff create a return for a delivered order (e.g. the customer phoned or came to the shop). */
-    public static function startReturn(): Action
+    /**
+     * Give money back: for a paid order that was cancelled, or a delivered order the customer returned
+     * (put the returned items back with Stock > Add stock).
+     */
+    public static function refund(): Action
     {
-        return Action::make('startReturn')
-            ->label('Start a return')
-            ->icon(Heroicon::OutlinedArrowUturnLeft)
-            ->color('gray')
-            ->visible(fn (Order $record) => $record->status === OrderStatus::Delivered)
-            ->modalDescription('Enter how many of each item the customer is returning.')
-            ->schema(fn (Order $record) => [
-                ...$record->items->map(fn ($item) => TextInput::make("qty_{$item->id}")
-                    ->label($item->product_name.($item->variant_name ? " ({$item->variant_name})" : '')." · bought {$item->quantity}")
-                    ->numeric()
-                    ->minValue(0)
-                    ->maxValue(max(0, $item->quantity - $item->returnedQuantity()))
-                    ->default(0))->all(),
-                Select::make('reason')->options(ReturnStatus::reasons())->required(),
-                Textarea::make('details')->rows(2),
-            ])
-            ->action(function (Order $record, array $data, Action $action) {
-                Attempt::run($action, function () use ($record, $data) {
-                    $items = $record->items->map(fn ($item) => ['order_item_id' => $item->id, 'quantity' => (int) ($data["qty_{$item->id}"] ?? 0)])->all();
-                    $return = app(ReturnService::class)->request($record, $items, $data['reason'], $data['details'] ?? null, byStaff: true);
-                    Notification::make()->success()->title("Return {$return->return_number} created")->send();
-                });
-            });
-    }
-
-    /** Give money back for a paid order that was cancelled. */
-    public static function refundCancelled(): Action
-    {
-        return Action::make('refundCancelled')
+        return Action::make('refund')
             ->label('Refund customer')
             ->icon(Heroicon::OutlinedBanknotes)
             ->color('danger')
-            ->visible(fn (Order $record) => $record->status === OrderStatus::Cancelled && $record->isPaid())
-            ->fillForm(fn (Order $record) => ['amount' => $record->total - $record->refundedAmount(), 'method' => 'mpesa'])
+            ->visible(fn (Order $record) => app(OrderWorkflow::class)->canRefund($record))
+            ->fillForm(fn (Order $record) => [
+                'amount' => $record->total - $record->refundedAmount(),
+                'method' => 'mpesa',
+                'note' => $record->status === OrderStatus::Cancelled ? 'Order cancelled' : 'Items returned',
+            ])
             ->schema([
                 TextInput::make('amount')->prefix('TZS')->numeric()->minValue(1)->required(),
-                Select::make('method')->label('Paid back with')->options(ReturnActions::refundMethods())->required(),
+                Select::make('method')->label('Paid back with')->options(PaymentChannels::refundMethods())->required(),
                 TextInput::make('reference')->label('Transaction ID'),
+                TextInput::make('note')->label('Reason')->required()->maxLength(200),
             ])
             ->action(function (Order $record, array $data, Action $action) {
                 Attempt::run($action, function () use ($record, $data) {
-                    app(ReturnService::class)->refundOrder($record, (int) $data['amount'], $data['method'], $data['reference'] ?? null, 'Order cancelled');
+                    app(OrderWorkflow::class)->refund($record, (int) $data['amount'], $data['method'], $data['reference'] ?? null, $data['note']);
                     Notification::make()->success()->title('Refund recorded')->send();
                 });
             });
@@ -140,11 +116,11 @@ class OrderActions
                     $payment = $record->paymentToCheck();
                     throw_unless($payment, ValidationException::withMessages(['payment' => 'This payment was already checked.']));
                     app(PaymentService::class)->confirmLipaNamba($payment, auth()->id());
-                }, 'Payment confirmed. The customer gets an SMS receipt.');
+                }, 'Payment confirmed. Call the customer to confirm their order.');
             });
     }
 
-    /** Staff could not find the money: the customer is told and can send the right transaction ID. */
+    /** Staff could not find the money: staff tell the customer, who can send the right transaction ID. */
     public static function rejectLipaPayment(): Action
     {
         return Action::make('rejectLipaPayment')
@@ -153,7 +129,7 @@ class OrderActions
             ->color('danger')
             ->visible(fn (Order $record) => $record->paymentToCheck() !== null)
             ->modalHeading('Payment not found')
-            ->modalDescription(fn (Order $record) => static::paymentToCheckText($record).' The customer gets an SMS and can send the correct transaction ID. The order is cancelled if they do not pay in time.')
+            ->modalDescription(fn (Order $record) => static::paymentToCheckText($record).' Call or WhatsApp the customer: they can send the correct transaction ID on the order page. The order is cancelled if they do not pay in time.')
             ->schema([
                 Select::make('reason')
                     ->label('What is wrong?')

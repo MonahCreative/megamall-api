@@ -3,95 +3,37 @@
 namespace App\Services;
 
 use App\Enums\StockMovementType;
-use App\Models\Damage;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Models\Purchase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
-/** Purchases (stock in) and damages (stock out). */
+/** Goods coming in, and what the stock on the shelves is worth. */
 class InventoryService
 {
     public function __construct(private readonly StockService $stock) {}
 
     /**
-     * Record goods received from a supplier and add them to stock.
-     *
-     * @param  array{supplier_id?:?int, purchase_date?:string, invoice_number?:?string, notes?:?string}  $data
-     * @param  array<int, array{product_id:int, product_variant_id?:?int, quantity:int, unit_cost:int}>  $items
+     * New goods arrived (or a customer brought an item back): add them to stock.
+     * When a cost price is given it becomes the product's cost price, so profit stays accurate.
      */
-    public function receivePurchase(array $data, array $items): Purchase
+    public function receiveStock(Product $product, ?int $variantId, int $quantity, ?int $unitCost = null, ?string $note = null): void
     {
-        if (empty($items)) {
-            throw ValidationException::withMessages(['items' => 'Add at least one product.']);
+        if ($quantity < 1) {
+            throw ValidationException::withMessages(['quantity' => 'Enter how many arrived.']);
+        }
+        if ($variantId && ! $product->variants()->whereKey($variantId)->exists()) {
+            throw ValidationException::withMessages(['product_variant_id' => "That option does not belong to {$product->name}."]);
+        }
+        if (! $variantId && $product->variants()->exists()) {
+            throw ValidationException::withMessages(['product_variant_id' => 'Choose which size or option arrived.']);
         }
 
-        return DB::transaction(function () use ($data, $items) {
-            $purchase = Purchase::create([
-                'reference' => 'PUR-'.now()->format('ymd').'-'.strtoupper(Str::random(4)),
-                'supplier_id' => $data['supplier_id'] ?? null,
-                'purchase_date' => $data['purchase_date'] ?? now()->toDateString(),
-                'invoice_number' => $data['invoice_number'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'user_id' => auth()->id(),
-            ]);
-
-            $total = 0;
-            foreach ($items as $item) {
-                $product = Product::findOrFail($item['product_id']);
-                $variantId = $item['product_variant_id'] ?? null;
-                if ($variantId && ! $product->variants()->whereKey($variantId)->exists()) {
-                    throw ValidationException::withMessages(['items' => "That option does not belong to {$product->name}."]);
-                }
-
-                $qty = (int) $item['quantity'];
-                $cost = (int) $item['unit_cost'];
-                $purchase->items()->create([
-                    'product_id' => $product->id,
-                    'product_variant_id' => $variantId,
-                    'quantity' => $qty,
-                    'unit_cost' => $cost,
-                    'line_total' => $qty * $cost,
-                ]);
-                $total += $qty * $cost;
-
-                $this->stock->move($product, $variantId, $qty, StockMovementType::Purchase, $purchase, "Purchase {$purchase->reference}");
-                $product->update(['cost_price' => $cost]);
+        DB::transaction(function () use ($product, $variantId, $quantity, $unitCost, $note) {
+            $this->stock->move($product, $variantId, $quantity, StockMovementType::Purchase, null, $note ?: 'Stock received');
+            if ($unitCost !== null) {
+                $product->update(['cost_price' => $unitCost]);
             }
-
-            $purchase->update(['total' => $total]);
-
-            return $purchase->load('items');
-        });
-    }
-
-    /** Record broken, expired, lost or stolen stock and remove it. */
-    public function recordDamage(int $productId, ?int $variantId, int $quantity, string $reason, ?string $notes = null, ?string $date = null): Damage
-    {
-        return DB::transaction(function () use ($productId, $variantId, $quantity, $reason, $notes, $date) {
-            $product = Product::findOrFail($productId);
-            if ($variantId && ! $product->variants()->whereKey($variantId)->exists()) {
-                throw ValidationException::withMessages(['product_variant_id' => "That option does not belong to {$product->name}."]);
-            }
-            if (! $variantId && $product->variants()->exists()) {
-                throw ValidationException::withMessages(['product_variant_id' => 'Choose which size or option was damaged.']);
-            }
-
-            $damage = Damage::create([
-                'product_id' => $productId,
-                'product_variant_id' => $variantId,
-                'quantity' => $quantity,
-                'reason' => $reason,
-                'damage_date' => $date ?? now()->toDateString(),
-                'notes' => $notes,
-                'user_id' => auth()->id(),
-            ]);
-
-            $this->stock->move($product, $variantId, -$quantity, StockMovementType::Damage, $damage, Damage::REASONS[$reason] ?? $reason);
-
-            return $damage;
         });
     }
 

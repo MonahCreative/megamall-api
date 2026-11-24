@@ -53,9 +53,7 @@ class NewOrderAlert extends Component
             ->where('status', '!=', OrderStatus::Cancelled)
             ->whereNotIn('id', $this->announced)
             ->where(fn (Builder $query) => $query
-                ->where(fn (Builder $new) => $new
-                    ->when(! LipaNamba::enabled(), fn (Builder $codOnly) => $codOnly->where('payment_mode', PaymentMode::CashOnDelivery))
-                    ->where('created_at', '>=', $since))
+                ->where('created_at', '>=', $since)
                 ->orWhere(fn (Builder $paid) => $paid->where('payment_mode', PaymentMode::Prepaid)->where('paid_at', '>=', $since)))
             ->latest('id')
             ->get(['id', 'order_number', 'customer_name', 'total', 'payment_mode', 'paid_at']);

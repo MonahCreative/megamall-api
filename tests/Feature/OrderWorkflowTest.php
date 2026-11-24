@@ -58,7 +58,7 @@ class OrderWorkflowTest extends TestCase
         $this->assertSame(OrderStatus::Delivered, $order->status);
         $this->assertTrue($order->isPaid());
         $this->assertSame('cash', $order->payments()->first()->channel);
-        $this->assertSame(38000, $order->payments()->first()->amount); // items only: the rider's delivery charge is paid to him directly
+        $this->assertSame(38000, $order->payments()->first()->amount); // items only: the shop adds no delivery fee
     }
 
     public function test_unpaid_upcountry_order_cannot_be_shipped(): void

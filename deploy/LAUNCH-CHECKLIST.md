@@ -21,9 +21,8 @@ Replace `megamall.co.tz` with the real domain everywhere if it is different.
 
 - [ ] **Domain** registered (e.g. `megamall.co.tz` from a .tz registrar).
 - [ ] **Server (VPS)**: Ubuntu 24.04, at least 2 GB RAM (4 GB recommended), e.g. DigitalOcean, Hetzner, Contabo.
-- [ ] **AzamPay** live credentials (after business KYC) and the API key.
+- [ ] **Lipa Namba** till number(s) for upcountry payments, and the name customers see when paying.
 - [ ] **Email** account for staff alerts (e.g. `orders@megamall.co.tz`) with its SMTP settings.
-- [ ] **SMS** provider account and approved sender name (can come after launch; SMS stay in the outbox until then).
 - [ ] Private **GitHub** repositories for `megamall-api` and `megamall-web`, with the latest code pushed.
 
 ## 1. Point the domain to the server
@@ -57,7 +56,7 @@ git clone https://github.com/YOUR-ACCOUNT/megamall-web.git
 ```bash
 cd /var/www/megamall-api
 cp deploy/env.production.example .env
-nano .env                                   # fill in DB_PASSWORD, mail, AzamPay, domains
+nano .env                                   # fill in DB_PASSWORD, mail, domains
 composer install --no-dev --optimize-autoloader
 php artisan key:generate
 php artisan migrate --force
@@ -108,19 +107,17 @@ A backup that only lives on the same server does not survive the server.
 ## 8. Admin settings (https://api.megamall.co.tz/admin)
 
 - [ ] **Store settings**: shop name, real phone and WhatsApp, email, business address, TIN, colours,
-      delivery note, staff alert emails, SMS wording, stock alert levels, payment window.
+      delivery note, staff alert emails and WhatsApp numbers, stock alert levels, Lipa Namba, payment window.
 - [ ] **Shop pages**: read Terms, Privacy and Return policy with the client (legal check).
 - [ ] **Regions**: delivery days per region.
 - [ ] **Products**: real products with square photos (or Excel import), cost prices, stock.
 - [ ] **Banners** for the home page slider, **Product sections** for the home page rows.
-- [ ] **AzamPay portal**: register the callback URL
-      `https://api.megamall.co.tz/api/payments/callback/azampay?key=<AZAMPAY_CALLBACK_KEY>`.
 
 ## 9. Test before announcing
 
 - [ ] Shop opens on phone and computer, with the padlock (https).
-- [ ] Dar es Salaam order: confirm, pack, send out, delivered (cash). SMS appear in the SMS outbox.
-- [ ] Upcountry order: pay a **small real amount** with M-Pesa; the order turns paid by itself.
+- [ ] Dar es Salaam order: confirm, pack, send out, delivered (cash).
+- [ ] Upcountry order: pay a **small real amount** to the Lipa Namba, send the transaction ID, and confirm it in the admin.
 - [ ] Staff email arrives for a new order; the admin pop-up and chime work.
 - [ ] Invoice and packing slip print. Customer "Download invoice" works.
 - [ ] Share a product link on WhatsApp: photo, name and price show

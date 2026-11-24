@@ -22,8 +22,6 @@ class CheckoutTest extends TestCase
     {
         parent::setUp();
         $this->seed([SettingSeeder::class, RegionSeeder::class]);
-        // These tests cover the automatic (PIN prompt) way of paying; Lipa Namba has its own test.
-        \App\Models\Setting::updateOrCreate(['key' => 'payment_method'], ['value' => 'automatic']);
 
         $category = Category::create(['name' => 'Home & Kitchen', 'slug' => 'home-kitchen']);
         $this->product = Product::create([
@@ -69,7 +67,7 @@ class CheckoutTest extends TestCase
             'items' => [['product_id' => $this->product->id, 'quantity' => 1]],
         ])->assertOk()->assertJsonPath('data.total', 32000)->assertJsonMissingPath('data.delivery_fee');
 
-        $this->getJson('/api/store')->assertJsonPath('delivery_note', fn ($note) => str_contains($note, 'rider'));
+        $this->getJson('/api/store')->assertJsonMissingPath('delivery_note')->assertJsonMissingPath('ticker');
         $this->getJson('/api/regions')->assertOk()->assertJsonMissingPath('data.0.delivery_fee');
     }
 
@@ -81,32 +79,7 @@ class CheckoutTest extends TestCase
             ->assertJsonPath('data.payment_mode', 'prepaid')
             ->assertJsonPath('data.status', 'awaiting_payment')
             ->assertJsonPath('data.delivery_fee', 0)
-            ->assertJsonPath('data.total', 64000); // delivery is paid to the bus/rider, not to the shop
-    }
-
-    public function test_mobile_money_payment_confirms_the_order(): void
-    {
-        config(['payments.fake.approve_after' => 0]);
-        $res = $this->orderFor('Arusha')->assertCreated();
-        $number = $res->json('data.order_number');
-        $token = $res->json('data.access_token');
-
-        $this->postJson("/api/orders/{$number}/pay", ['token' => $token, 'channel' => 'mpesa', 'phone' => '0754000111'])
-            ->assertOk()
-            ->assertJsonPath('data.payment.status', 'pending');
-
-        $this->getJson("/api/orders/{$number}/payment-status?token={$token}")
-            ->assertOk()
-            ->assertJsonPath('data.payment_status', 'paid')
-            ->assertJsonPath('data.status', 'confirmed');
-    }
-
-    public function test_cod_orders_cannot_be_sent_to_mobile_money(): void
-    {
-        $res = $this->orderFor('Dar es Salaam');
-        $this->postJson('/api/orders/'.$res->json('data.order_number').'/pay', [
-            'token' => $res->json('data.access_token'), 'channel' => 'mpesa', 'phone' => '0754000111',
-        ])->assertUnprocessable();
+            ->assertJsonPath('data.total', 64000); // the shop never adds a delivery fee
     }
 
     public function test_prices_come_from_the_server_not_the_browser(): void

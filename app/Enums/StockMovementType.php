@@ -5,6 +5,10 @@ namespace App\Enums;
 use Filament\Support\Contracts\HasColor;
 use Filament\Support\Contracts\HasLabel;
 
+/**
+ * Why stock changed. PosSale, Damage and Return are no longer created (the POS, damages and
+ * online returns were removed) but stay so older stock history still shows a label.
+ */
 enum StockMovementType: string implements HasColor, HasLabel
 {
     case Purchase = 'purchase';
@@ -18,7 +22,7 @@ enum StockMovementType: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Purchase => 'Purchase received',
+            self::Purchase => 'Stock received',
             self::OnlineSale => 'Online order',
             self::PosSale => 'Shop sale (POS)',
             self::OrderCancelled => 'Order cancelled',

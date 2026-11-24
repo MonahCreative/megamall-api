@@ -5,7 +5,6 @@ namespace App\Services\Reports;
 use App\Enums\OrderStatus;
 use App\Models\OrderItem;
 use App\Models\Product;
-use App\Models\PurchaseItem;
 use App\Models\Setting;
 use App\Models\StockAlert;
 use Illuminate\Database\Eloquent\Builder;
@@ -38,7 +37,6 @@ class ReorderList
             ->groupBy('product_id', 'product_variant_id')
             ->get()
             ->groupBy('product_id');
-        $lastPurchases = $this->lastPurchases();
 
         $rows = [];
         $products = Product::query()->where('is_active', true)->with(['variants' => fn ($query) => $query->where('is_active', true), 'category:id,name'])->get();
@@ -64,7 +62,6 @@ class ReorderList
                 $alerts = $waiting->get($product->id, collect())
                     ->filter(fn ($row) => $row->product_variant_id === null || (int) $row->product_variant_id === (int) $variantId)
                     ->sum('total');
-                $purchase = $lastPurchases[$key] ?? $lastPurchases[$product->id.':0'] ?? null;
 
                 $rows[] = [
                     'product_id' => $product->id,
@@ -76,9 +73,8 @@ class ReorderList
                     'days_left' => $daysLeft,
                     'suggested' => $suggested,
                     'customers_waiting' => (int) $alerts,
-                    'supplier' => $purchase['supplier'] ?? null,
-                    'last_cost' => $purchase['unit_cost'] ?? $product->cost_price,
-                    'estimated_cost' => $suggested * (int) ($purchase['unit_cost'] ?? $product->cost_price ?? 0),
+                    'last_cost' => $product->cost_price,
+                    'estimated_cost' => $suggested * (int) ($product->cost_price ?? 0),
                 ];
             }
         }
@@ -90,7 +86,7 @@ class ReorderList
         return $rows;
     }
 
-    /** @return array<string, int> "productId:variantId" => units ordered recently (online and shop, not cancelled) */
+    /** @return array<string, int> "productId:variantId" => units ordered recently (not cancelled) */
     private function unitsSold(): array
     {
         return OrderItem::query()
@@ -103,23 +99,5 @@ class ReorderList
             ->get()
             ->mapWithKeys(fn ($row) => [$row->product_id.':'.($row->product_variant_id ?? 0) => (int) $row->units])
             ->all();
-    }
-
-    /** @return array<string, array{supplier: ?string, unit_cost: int}> latest purchase per product/size */
-    private function lastPurchases(): array
-    {
-        $latest = [];
-        PurchaseItem::query()
-            ->with('purchase.supplier:id,name')
-            ->orderByDesc('id')
-            ->limit(2000)
-            ->get()
-            ->each(function (PurchaseItem $item) use (&$latest) {
-                foreach ([$item->product_id.':'.($item->product_variant_id ?? 0), $item->product_id.':0'] as $key) {
-                    $latest[$key] ??= ['supplier' => $item->purchase?->supplier?->name, 'unit_cost' => (int) $item->unit_cost];
-                }
-            });
-
-        return $latest;
     }
 }

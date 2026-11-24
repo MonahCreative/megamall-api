@@ -11,6 +11,6 @@ class ListStockAlerts extends ListRecords
 
     public function getSubheading(): ?string
     {
-        return 'When these products are restocked (purchase, stock count or import), the customers get an SMS automatically.';
+        return 'When a product is restocked, staff get a WhatsApp with the numbers. Tap WhatsApp to message the customer, then Mark contacted.';
     }
 }

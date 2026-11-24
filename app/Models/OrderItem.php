@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OrderItem extends Model
 {
@@ -28,18 +27,6 @@ class OrderItem extends Model
         return $this->belongsTo(Product::class);
     }
 
-    public function returnItems(): HasMany
-    {
-        return $this->hasMany(ReturnItem::class);
-    }
-
-    /** How many of this line have already been asked back in non-rejected returns. */
-    public function returnedQuantity(): int
-    {
-        return (int) $this->returnItems()
-            ->whereHas('returnRequest', fn ($query) => $query->where('status', '!=', 'rejected'))
-            ->sum('quantity');
-    }
 
     public function variant(): BelongsTo
     {

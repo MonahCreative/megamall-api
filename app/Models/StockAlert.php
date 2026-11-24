@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** A customer asked for an SMS when a product (or one size of it) is back in stock. */
+/** A customer asked to be told when a product (or one size of it) is back in stock. notified_at = staff contacted them. */
 class StockAlert extends Model
 {
     protected $fillable = ['product_id', 'product_variant_id', 'phone', 'notified_at'];

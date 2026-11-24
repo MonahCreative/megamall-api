@@ -6,7 +6,7 @@
             @include('filament.partials.reorder-table', ['rows' => $rows, 'showCost' => true])
             <p style="margin-top:12px; opacity:.7; font-size:.85rem">
                 Total estimated cost: <strong>{{ \App\Support\Money::tzs(array_sum(array_column($rows, 'estimated_cost'))) }}</strong>
-                (suggested quantities × last purchase cost).
+                (suggested quantities × cost price).
             </p>
         @endif
     </x-filament::section>

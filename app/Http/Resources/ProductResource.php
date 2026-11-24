@@ -33,8 +33,6 @@ class ProductResource extends JsonResource
             // Products with sizes/colours must be added to the cart from their own page, after choosing one.
             'has_variants' => $this->variants->where('is_active', true)->isNotEmpty(),
             'sold_count' => $this->sold_count,
-            'rating' => $this->rating !== null ? round((float) $this->rating, 1) : null,
-            'review_count' => (int) ($this->review_count ?? 0),
             'image' => $this->mainImage?->url(),
             'category' => $this->whenLoaded('category', fn () => [
                 'id' => $this->category->id,

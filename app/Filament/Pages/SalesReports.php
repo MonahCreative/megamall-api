@@ -38,14 +38,12 @@ class SalesReports extends Page
 
     protected static ?int $navigationSort = 1;
 
-    public const CHANNELS = ['all' => 'Online and shop', 'online' => 'Online orders only', 'pos' => 'Shop (POS) only'];
-
     /** @var array<string, mixed> | null */
     public ?array $filters = [];
 
     public function mount(): void
     {
-        $this->form->fill(['period' => 'this_month', 'channel' => 'all']);
+        $this->form->fill(['period' => 'this_month']);
     }
 
     public function form(Schema $schema): Schema
@@ -53,7 +51,7 @@ class SalesReports extends Page
         return $schema
             ->components([
                 Section::make()
-                    ->columns(['md' => 4])
+                    ->columns(['md' => 3])
                     ->schema([
                         Select::make('period')
                             ->label('Period')
@@ -74,11 +72,6 @@ class SalesReports extends Page
                             ->maxDate(now())
                             ->live()
                             ->visible(fn (Get $get) => $get('period') === 'custom'),
-                        Select::make('channel')
-                            ->label('Sales from')
-                            ->options(self::CHANNELS)
-                            ->selectablePlaceholder(false)
-                            ->live(),
                     ]),
             ])
             ->statePath('filters');
@@ -94,7 +87,7 @@ class SalesReports extends Page
     {
         $range = $this->range();
 
-        return new SalesReport($range->start, $range->end, $this->filters['channel'] ?? 'all');
+        return new SalesReport($range->start, $range->end);
     }
 
     protected function getHeaderActions(): array
@@ -116,10 +109,7 @@ class SalesReports extends Page
         $sheets = [
             'Summary' => [['Figure', 'Value'], [
                 ['Period', $range->start->format('d M Y').' - '.$range->end->format('d M Y')],
-                ['Sales from', self::CHANNELS[$report->channel] ?? $report->channel],
                 ['Orders', $summary['orders']],
-                ['Online orders', $summary['online_orders']],
-                ['Shop (POS) sales', $summary['pos_orders']],
                 ['Items sold', $summary['items_sold']],
                 ['Gross sales (TZS)', $summary['gross_sales']],
                 ['Discounts (TZS)', $summary['discounts']],

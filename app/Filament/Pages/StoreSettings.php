@@ -7,16 +7,13 @@ use App\Rules\TanzanianPhone;
 use App\Services\StaffWhatsApp;
 use App\Support\LipaNamba;
 use App\Support\Phone;
-use App\Support\SmsTemplates;
 use App\Support\Theme;
 use BackedEnum;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
-use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -26,7 +23,6 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -50,13 +46,13 @@ class StoreSettings extends Page
 
     /** Keys from the settings table that this page edits. */
     private const KEYS = [
-        'store_name', 'tagline', 'phone', 'whatsapp', 'email', 'ticker', 'prepaid_order_expiry_minutes',
-        'return_window_days', 'auto_approve_reviews', 'delivery_note', 'theme_primary', 'theme_dark', 'theme_sale',
-        'sms_enabled', 'sms_templates', 'staff_alert_emails', 'staff_alert_sound', 'staff_whatsapp', 'business_address', 'tin',
-        'low_stock_level', 'reorder_cover_days', 'payment_method', 'lipa_numbers', 'lipa_note',
+        'store_name', 'tagline', 'phone', 'whatsapp', 'email', 'prepaid_order_expiry_minutes',
+        'return_window_days', 'delivery_note', 'theme_primary', 'theme_dark', 'theme_sale',
+        'staff_alert_emails', 'staff_alert_sound', 'staff_whatsapp', 'business_address', 'tin',
+        'low_stock_level', 'reorder_cover_days', 'lipa_numbers', 'lipa_note',
     ];
 
-    private const BOOLEANS = ['auto_approve_reviews', 'sms_enabled', 'staff_alert_sound'];
+    private const BOOLEANS = ['staff_alert_sound'];
 
     /** @var array<string, mixed> | null */
     public ?array $data = [];
@@ -64,15 +60,12 @@ class StoreSettings extends Page
     public function mount(): void
     {
         $this->form->fill([
-            'sms_enabled' => true,
             'staff_alert_sound' => true,
             'low_stock_level' => 5,
             'reorder_cover_days' => 30,
-            'payment_method' => LipaNamba::METHOD,
             'lipa_note' => LipaNamba::DEFAULT_NOTE,
             ...collect(Setting::allValues())->only(self::KEYS)->all(),
             ...Theme::colours(),
-            'sms_templates' => SmsTemplates::all(),
         ]);
     }
 
@@ -104,22 +97,8 @@ class StoreSettings extends Page
                             ->placeholder('123-456-789')
                             ->maxLength(30),
                     ]),
-                Section::make('Customer SMS')
-                    ->description(new HtmlString('Messages customers get as their order moves along. Until an SMS account is connected they are only saved under <strong>Store › SMS outbox</strong>, not sent. You can use: {first_name} {name} {order} {total} {area} {tracking} {reason} {minutes} {store_name} {store_phone} {track_url} {return_days} {lipa} (your Lipa Namba) {transaction}'))
-                    ->collapsible()
-                    ->collapsed()
-                    ->schema([
-                        Toggle::make('sms_enabled')->label('Send SMS to customers'),
-                        ...collect(SmsTemplates::EVENTS)->map(fn (string $label, string $event) => Textarea::make("sms_templates.{$event}")
-                            ->label($label)
-                            ->rows(2)
-                            ->maxLength(320)
-                            ->helperText(fn (?string $state) => mb_strlen((string) $state).' characters'.(mb_strlen((string) $state) > 160 ? ' (sent as 2 SMS)' : ''))
-                            ->live(onBlur: true)
-                            ->required())->values()->all(),
-                    ]),
                 Section::make('Staff alerts')
-                    ->description('How staff hear about new orders: when they are placed (and, with automatic payments, once upcountry orders are paid).')
+                    ->description('How staff hear about new orders and Lipa Namba payments to check.')
                     ->columns(2)
                     ->schema([
                         TextInput::make('staff_alert_emails')
@@ -172,13 +151,13 @@ class StoreSettings extends Page
                             ->required(),
                     ]),
                 Section::make('Delivery')
-                    ->description('The shop does not charge delivery: customers pay the rider or bus company directly. This note is shown at checkout and on order pages.')
+                    ->description('Printed at the bottom of every invoice. Leave empty to print nothing.')
                     ->schema([
                         Textarea::make('delivery_note')
-                            ->label('Delivery note for customers')
+                            ->label('Delivery note on invoices')
+                            ->placeholder('Delivery is free in Dar es Salaam. Other regions: the bus fare is paid when you collect the parcel.')
                             ->rows(3)
-                            ->maxLength(400)
-                            ->required(),
+                            ->maxLength(400),
                     ]),
                 Section::make('Website colours')
                     ->description('Colours of the online shop. The admin panel follows the main colour too. Customers see the new colours the next time a page loads.')
@@ -220,45 +199,23 @@ class StoreSettings extends Page
                             ->regex('/^#[0-9a-fA-F]{6}$/')
                             ->rules([self::readableWithWhiteText()]),
                     ]),
-                Section::make('Top bar messages')
-                    ->description('The scrolling messages at the very top of the shop. Press Enter after each one.')
-                    ->schema([
-                        TagsInput::make('ticker')->hiddenLabel()->reorderable(),
-                    ]),
-                Section::make('Returns and reviews')
-                    ->columns(2)
+                Section::make('Returns')
                     ->schema([
                         TextInput::make('return_window_days')
-                            ->label('Customers can ask for a return within (days of delivery)')
+                            ->label('Returns accepted within (days of delivery)')
+                            ->helperText('Shown in the shop footer and on invoices. Customers arrange returns on WhatsApp; staff refund from the order page.')
                             ->numeric()
                             ->minValue(0)
                             ->maxValue(90)
                             ->default(7)
                             ->required(),
-                        Toggle::make('auto_approve_reviews')
-                            ->label('Publish reviews immediately')
-                            ->helperText('Off: you approve each review under Reviews before it shows on the shop.')
-                            ->inline(false),
                     ]),
                 Section::make('Mobile money orders')
                     ->description('Customers outside Dar es Salaam pay before their order is sent.')
                     ->schema([
-                        Radio::make('payment_method')
-                            ->label('How customers pay')
-                            ->options([
-                                LipaNamba::METHOD => 'Lipa Namba',
-                                LipaNamba::AUTOMATIC => 'Automatic mobile money (AzamPay)',
-                            ])
-                            ->descriptions([
-                                LipaNamba::METHOD => 'Customers pay to your till number and type the transaction ID. Staff check it in the mobile money messages and press "Confirm payment".',
-                                LipaNamba::AUTOMATIC => 'Customers get a PIN prompt and the payment confirms itself. Only after AzamPay approves your business and the live keys are in .env.',
-                            ])
-                            ->live()
-                            ->required(),
                         Repeater::make('lipa_numbers')
                             ->label('Your Lipa Namba')
                             ->helperText('Shown to customers exactly as entered. Add one for each network you have a till number on. Until you add one, customers are asked to call you to pay.')
-                            ->visible(fn (Get $get) => $get('payment_method') === LipaNamba::METHOD)
                             ->schema([
                                 Select::make('channel')
                                     ->label('Network')
@@ -283,7 +240,6 @@ class StoreSettings extends Page
                             ->addActionLabel('Add a Lipa Namba'),
                         Textarea::make('lipa_note')
                             ->label('Note shown under the Lipa Namba')
-                            ->visible(fn (Get $get) => $get('payment_method') === LipaNamba::METHOD)
                             ->rows(2)
                             ->maxLength(300)
                             ->required(),
@@ -366,9 +322,6 @@ class StoreSettings extends Page
             if (in_array($key, self::BOOLEANS, true)) {
                 $value = (bool) $value;
             }
-            if ($key === 'sms_templates') {
-                $value = collect(SmsTemplates::EVENTS)->keys()->mapWithKeys(fn (string $event) => [$event => trim((string) ($value[$event] ?? ''))])->all();
-            }
             if ($key === 'staff_whatsapp') {
                 $value = collect($value ?? [])->map(fn (array $row) => [
                     'name' => trim((string) ($row['name'] ?? '')),
@@ -378,9 +331,6 @@ class StoreSettings extends Page
             }
             if ($key === 'staff_alert_emails') {
                 $value = implode(', ', preg_split('/[\s,;]+/', (string) $value, -1, PREG_SPLIT_NO_EMPTY));
-            }
-            if (in_array($key, ['lipa_numbers', 'lipa_note'], true) && ! array_key_exists($key, $data)) {
-                continue; // hidden while "Automatic" is chosen: keep what was saved
             }
             if ($key === 'lipa_numbers') {
                 $value = collect($value ?? [])->map(fn (array $row) => [

@@ -4,8 +4,6 @@ namespace Tests\Feature;
 
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
-use App\Enums\ReturnStatus;
-use App\Enums\ReviewStatus;
 use App\Enums\StockMovementType;
 use App\Models\Category;
 use App\Models\Order;
@@ -13,13 +11,10 @@ use App\Models\Product;
 use App\Models\ProductSection;
 use App\Models\Promotion;
 use App\Models\Region;
-use App\Models\Review;
 use App\Models\StockMovement;
 use App\Services\InventoryService;
 use App\Services\OrderService;
 use App\Services\OrderWorkflow;
-use App\Services\PosService;
-use App\Services\ReturnService;
 use App\Services\StockService;
 use Database\Seeders\RegionSeeder;
 use Database\Seeders\SettingSeeder;
@@ -27,7 +22,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
-/** Purchases, damages, stock, POS, promotions, returns, refunds, reviews and home sections. */
+/** Stock, promotions, refunds and home sections. */
 class StoreModulesTest extends TestCase
 {
     use RefreshDatabase;
@@ -44,10 +39,11 @@ class StoreModulesTest extends TestCase
         $this->kettle = Product::create(['category_id' => $this->category->id, 'name' => 'Electric Kettle', 'price' => 30000, 'stock' => 10]);
     }
 
-    private function deliveredDarOrder(int $quantity = 2): Order
+    private function darOrder(int $quantity = 1): Order
     {
         $region = Region::where('name', 'Dar es Salaam')->first();
-        $order = app(OrderService::class)->place([
+
+        return app(OrderService::class)->place([
             'customer_name' => 'Neema Mushi',
             'phone' => '0712345678',
             'region_id' => $region->id,
@@ -56,6 +52,11 @@ class StoreModulesTest extends TestCase
             'address' => 'Near Sinza Mori',
             'items' => [['product_id' => $this->kettle->id, 'quantity' => $quantity]],
         ]);
+    }
+
+    private function deliveredDarOrder(int $quantity = 2): Order
+    {
+        $order = $this->darOrder($quantity);
         $flow = app(OrderWorkflow::class);
         $flow->confirm($order);
         $flow->ship($order);
@@ -66,26 +67,24 @@ class StoreModulesTest extends TestCase
 
     // ---------- Stock ----------
 
-    public function test_purchase_adds_stock_logs_it_and_updates_cost(): void
+    public function test_adding_stock_logs_it_and_updates_cost(): void
     {
-        $purchase = app(InventoryService::class)->receivePurchase(
-            ['purchase_date' => now()->toDateString()],
-            [['product_id' => $this->kettle->id, 'quantity' => 5, 'unit_cost' => 21000]],
-        );
+        app(InventoryService::class)->receiveStock($this->kettle, null, 5, 21000, 'From Kariakoo');
 
         $this->assertSame(15, $this->kettle->fresh()->stock);
         $this->assertSame(21000, $this->kettle->fresh()->cost_price);
-        $this->assertSame(105000, $purchase->total);
-        $this->assertDatabaseHas('stock_movements', ['product_id' => $this->kettle->id, 'type' => 'purchase', 'quantity' => 5, 'balance_after' => 15]);
-    }
+        $movement = StockMovement::where('product_id', $this->kettle->id)->sole();
+        $this->assertSame(StockMovementType::Purchase, $movement->type);
+        $this->assertSame('From Kariakoo', $movement->note);
 
-    public function test_damage_removes_stock_and_cannot_go_below_zero(): void
-    {
-        app(InventoryService::class)->recordDamage($this->kettle->id, null, 3, 'broken');
-        $this->assertSame(7, $this->kettle->fresh()->stock);
+        // Without a cost, the cost price stays; products with sizes need the size.
+        app(InventoryService::class)->receiveStock($this->kettle->fresh(), null, 1);
+        $this->assertSame(21000, $this->kettle->fresh()->cost_price);
 
+        $shirt = Product::create(['category_id' => $this->category->id, 'name' => 'Shirt', 'price' => 20000, 'stock' => 0]);
+        $shirt->variants()->create(['name' => 'M', 'stock' => 0]);
         $this->expectException(ValidationException::class);
-        app(InventoryService::class)->recordDamage($this->kettle->id, null, 50, 'lost');
+        app(InventoryService::class)->receiveStock($shirt, null, 3);
     }
 
     public function test_count_correction_logs_the_difference(): void
@@ -110,26 +109,6 @@ class StoreModulesTest extends TestCase
         $this->assertSame(10, $this->kettle->fresh()->stock);
     }
 
-    // ---------- POS ----------
-
-    public function test_pos_sale_is_paid_delivered_and_takes_stock(): void
-    {
-        $order = app(PosService::class)->sell([['product_id' => $this->kettle->id, 'quantity' => 2]], 'cash', discount: 2000);
-
-        $this->assertSame('pos', $order->channel);
-        $this->assertSame(OrderStatus::Delivered, $order->status);
-        $this->assertSame(PaymentStatus::Paid, $order->payment_status);
-        $this->assertSame(58000, $order->total);
-        $this->assertSame(8, $this->kettle->fresh()->stock);
-        $this->assertSame(0, Order::query()->needsAction()->count()); // POS sales never land in the online "To do" list
-    }
-
-    public function test_pos_discount_cannot_exceed_total(): void
-    {
-        $this->expectException(ValidationException::class);
-        app(PosService::class)->sell([['product_id' => $this->kettle->id, 'quantity' => 1]], 'cash', discount: 99999);
-    }
-
     // ---------- Promotions ----------
 
     public function test_running_category_promotion_lowers_checkout_price_and_shows_in_api(): void
@@ -140,8 +119,7 @@ class StoreModulesTest extends TestCase
         ]);
         $promotion->categories()->attach($this->category);
 
-        $order = app(PosService::class)->sell([['product_id' => $this->kettle->id, 'quantity' => 1]], 'cash');
-        $this->assertSame(24000, $order->total);
+        $this->assertSame(24000, $this->darOrder()->total);
 
         $this->getJson('/api/products/'.$this->kettle->slug)
             ->assertOk()
@@ -165,84 +143,48 @@ class StoreModulesTest extends TestCase
         $this->assertNotNull($expired);
     }
 
-    // ---------- Returns and refunds ----------
+    // ---------- Refunds ----------
 
-    public function test_full_return_journey_restocks_and_refunds(): void
+    public function test_delivered_order_can_be_refunded_in_part_then_in_full(): void
     {
-        $order = $this->deliveredDarOrder(2);
-        $this->assertSame(8, $this->kettle->fresh()->stock);
-        $item = $order->items->first();
+        $order = $this->deliveredDarOrder(2); // 60,000 paid in cash
+        $flow = app(OrderWorkflow::class);
+        $this->assertTrue($flow->canRefund($order));
 
-        $this->postJson('/api/returns', [
-            'order_number' => $order->order_number,
-            'phone' => '0712 345 678',
-            'reason' => 'damaged',
-            'items' => [['order_item_id' => $item->id, 'quantity' => 1]],
-        ])->assertCreated()->assertJsonPath('data.refund_amount', 30000);
+        $flow->refund($order, 30000, 'mpesa', 'QX12345', 'One kettle returned');
+        $this->assertSame(PaymentStatus::Paid, $order->fresh()->payment_status);
 
-        $return = $order->returnRequests()->first();
-        $service = app(ReturnService::class);
-        $service->approve($return);
-        $service->receive($return->fresh(), restock: true);
-        $service->refundReturn($return->fresh(), 30000, 'mpesa', 'QX12345');
-
-        $this->assertSame(ReturnStatus::Refunded, $return->fresh()->status);
-        $this->assertSame(9, $this->kettle->fresh()->stock);
-        $this->assertSame(30000, $order->fresh()->refundedAmount());
-        $this->assertSame(PaymentStatus::Paid, $order->fresh()->payment_status); // only part of the order was refunded
+        $flow->refund($order->fresh(), 30000, 'cash', null, 'Second kettle returned');
+        $this->assertSame(PaymentStatus::Refunded, $order->fresh()->payment_status);
+        $this->assertFalse($flow->canRefund($order->fresh()));
     }
 
-    public function test_cannot_return_more_than_bought_or_undelivered_orders(): void
+    public function test_refund_cannot_exceed_what_was_paid_or_be_given_on_unpaid_orders(): void
     {
         $order = $this->deliveredDarOrder(1);
 
-        $this->postJson('/api/returns', [
-            'order_number' => $order->order_number, 'phone' => '0712345678', 'reason' => 'changed_mind',
-            'items' => [['order_item_id' => $order->items->first()->id, 'quantity' => 2]],
-        ])->assertUnprocessable();
+        try {
+            app(OrderWorkflow::class)->refund($order, 40000, 'cash');
+            $this->fail('Refunded more than was paid.');
+        } catch (ValidationException) {
+            $this->assertSame(0, $order->refundedAmount());
+        }
 
-        $region = Region::where('name', 'Dar es Salaam')->first();
-        $open = app(OrderService::class)->place([
-            'customer_name' => 'Juma', 'phone' => '0713000000', 'region_id' => $region->id,
-            'district_id' => $region->districts()->first()->id, 'area' => 'Mbezi', 'address' => 'X',
-            'items' => [['product_id' => $this->kettle->id, 'quantity' => 1]],
-        ]);
-        $this->postJson('/api/returns', [
-            'order_number' => $open->order_number, 'phone' => '0713000000', 'reason' => 'changed_mind',
-            'items' => [['order_item_id' => $open->items->first()->id, 'quantity' => 1]],
-        ])->assertUnprocessable();
+        $unpaid = $this->darOrder();
+        $this->assertSame(OrderStatus::Pending, $unpaid->status);
+        $this->assertFalse(app(OrderWorkflow::class)->canRefund($unpaid));
     }
 
-    public function test_refund_cannot_exceed_what_was_paid(): void
-    {
-        $order = $this->deliveredDarOrder(1); // 30,000 + 3,000 delivery
+    // ---------- Removed features ----------
 
-        $this->expectException(ValidationException::class);
-        app(ReturnService::class)->refundOrder($order, 40000, 'cash');
-    }
-
-    // ---------- Reviews ----------
-
-    public function test_only_buyers_of_delivered_orders_can_review_and_reviews_wait_for_approval(): void
+    public function test_reviews_and_online_returns_are_gone(): void
     {
         $order = $this->deliveredDarOrder(1);
 
-        $this->postJson("/api/products/{$this->kettle->slug}/reviews", [
-            'order_number' => $order->order_number, 'phone' => '0799999999', 'rating' => 5,
-        ])->assertUnprocessable();
-
-        $this->postJson("/api/products/{$this->kettle->slug}/reviews", [
-            'order_number' => $order->order_number, 'phone' => '0712345678', 'rating' => 4, 'comment' => 'Boils fast',
-        ])->assertCreated();
-
-        $this->getJson('/api/products/'.$this->kettle->slug)->assertJsonPath('reviews.summary.count', 0);
-
-        Review::first()->update(['status' => ReviewStatus::Approved]);
-
-        $this->getJson('/api/products/'.$this->kettle->slug)
-            ->assertJsonPath('reviews.summary.count', 1)
-            ->assertJsonPath('data.review_count', 1)
-            ->assertJsonPath('reviews.items.0.comment', 'Boils fast');
+        $this->postJson("/api/products/{$this->kettle->slug}/reviews", ['order_number' => $order->order_number, 'phone' => '0712345678', 'rating' => 5])->assertNotFound();
+        $this->postJson('/api/returns', ['order_number' => $order->order_number])->assertNotFound();
+        $this->getJson('/api/returns/reasons')->assertNotFound();
+        $this->getJson('/api/products/'.$this->kettle->slug)->assertOk()->assertJsonMissingPath('reviews')->assertJsonMissingPath('data.rating');
     }
 
     // ---------- Home page sections ----------

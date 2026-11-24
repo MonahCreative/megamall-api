@@ -18,8 +18,8 @@ use Illuminate\Support\Collection;
 /**
  * Sales figures for a period.
  *
- * A sale counts on the day it was paid: at the counter for POS, on delivery for pay-on-delivery orders,
- * and when the mobile money arrived for upcountry orders. Cancelled orders are left out.
+ * A sale counts on the day it was paid: on delivery for pay-on-delivery orders, and when the
+ * Lipa Namba payment was confirmed for upcountry orders. Cancelled orders are left out.
  * Sales = items sold minus discounts. Profit = sales minus what the items cost us.
  */
 class SalesReport
@@ -31,8 +31,7 @@ class SalesReport
     /** @var Collection<int, Order> */
     private Collection $orders;
 
-    /** @param  string  $channel  all | online | pos */
-    public function __construct(CarbonInterface $start, CarbonInterface $end, public readonly string $channel = 'all')
+    public function __construct(CarbonInterface $start, CarbonInterface $end)
     {
         $this->start = CarbonImmutable::instance($start)->startOfDay();
         $this->end = CarbonImmutable::instance($end)->endOfDay();
@@ -50,7 +49,7 @@ class SalesReport
             ->whereIn('payment_status', [PaymentStatus::Paid, PaymentStatus::Refunded])
             ->where('status', '!=', OrderStatus::Cancelled)
             ->whereBetween('paid_at', [$this->start, $this->end])
-            ->when($this->channel !== 'all', fn (Builder $query) => $query->where('channel', $this->channel));
+            ->online();
     }
 
     /** @return array<string, int|float|null> */
@@ -66,8 +65,6 @@ class SalesReport
 
         return [
             'orders' => $this->orders->count(),
-            'online_orders' => $this->orders->where('channel', 'online')->count(),
-            'pos_orders' => $this->orders->where('channel', 'pos')->count(),
             'items_sold' => (int) $items->sum('quantity'),
             'gross_sales' => $gross,
             'discounts' => $discounts,
@@ -221,7 +218,7 @@ class SalesReport
             ->whereBetween('created_at', [$this->start, $this->end])
             ->whereHas('order', fn (Builder $query) => $query
                 ->where('status', '!=', OrderStatus::Cancelled)
-                ->when($this->channel !== 'all', fn (Builder $inner) => $inner->where('channel', $this->channel)));
+                ->online());
     }
 
     private function refundsTotal(): int

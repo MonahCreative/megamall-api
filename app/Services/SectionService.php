@@ -13,7 +13,7 @@ class SectionService
 
     public function products(ProductSection $section): Collection
     {
-        $base = Product::active()->with(['mainImage', 'category', 'variants'])->withRatings();
+        $base = Product::active()->with(['mainImage', 'category', 'variants']);
         $limit = $section->product_limit ?: 10;
 
         return match ($section->source) {
@@ -24,9 +24,7 @@ class SectionService
                 ->values(),
             'featured' => $base->where('is_featured', true)->latest('id')->limit($limit)->get(),
             'best_selling' => $base->orderByDesc('sold_count')->limit($limit)->get(),
-            'category' => $base->whereIn('category_id', $section->category
-                ? $section->category->children()->pluck('id')->push($section->category_id)
-                : [])->latest('id')->limit($limit)->get(),
+            'category' => $base->where('category_id', $section->category_id ?? 0)->latest('id')->limit($limit)->get(),
             'discounted' => $this->discounted($base, $limit),
             default => $base->latest('id')->limit($limit)->get(), // newest
         };

@@ -8,8 +8,9 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Region;
 use App\Models\Setting;
+use App\Models\StockAlert;
 use App\Models\User;
-use App\Services\PosService;
+use App\Services\InventoryService;
 use App\Services\StaffWhatsApp;
 use Database\Seeders\RegionSeeder;
 use Database\Seeders\SettingSeeder;
@@ -80,7 +81,7 @@ class StaffWhatsAppTest extends TestCase
         Http::assertSent(fn (HttpRequest $request) => str_contains($request['text'], 'waiting for Lipa Namba payment'));
     }
 
-    public function test_a_whatsapp_failure_never_breaks_the_order_and_shop_sales_send_nothing(): void
+    public function test_a_whatsapp_failure_never_breaks_the_order(): void
     {
         $this->reply = ['APIKey is invalid', 200];
         $this->order('Dar es Salaam'); // still created
@@ -91,12 +92,25 @@ class StaffWhatsAppTest extends TestCase
         $this->reply = ['', 500];
         $this->order('Dar es Salaam');
         $this->assertSame(2, Order::count());
+    }
 
-        $cashier = User::factory()->create();
-        $cashier->forceFill(['is_admin' => true])->save();
-        $this->actingAs($cashier);
+    public function test_staff_get_a_whatsapp_when_a_product_customers_wait_for_is_restocked(): void
+    {
+        $this->kettle->update(['stock' => 0]);
+        $this->postJson("/api/products/{$this->kettle->slug}/notify", ['phone' => '0712 345 678'])->assertCreated();
+
+        app(InventoryService::class)->receiveStock($this->kettle->fresh(), null, 5, 21000);
+
+        $this->assertSame(5, $this->kettle->fresh()->stock);
+        $this->assertSame(21000, $this->kettle->fresh()->cost_price);
+        Http::assertSent(fn (HttpRequest $request) => str_contains($request['text'], '*Back in stock* Electric Kettle')
+            && str_contains($request['text'], '0712 345 678')
+            && str_contains($request['text'], '/admin/back-in-stock-requests'));
+        $this->assertSame(1, StockAlert::waiting()->count()); // waits until staff mark it contacted
+
+        // More stock arriving while some is still on the shelf sends nothing.
         $sent = count(Http::recorded());
-        app(PosService::class)->sell([['product_id' => $this->kettle->id, 'quantity' => 1]], 'cash');
+        app(InventoryService::class)->receiveStock($this->kettle->fresh(), null, 2);
         $this->assertCount($sent, Http::recorded());
     }
 

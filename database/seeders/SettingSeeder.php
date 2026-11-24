@@ -16,23 +16,13 @@ class SettingSeeder extends Seeder
             'phone' => '+255 700 000 000',
             'whatsapp' => '255700000000',
             'email' => 'support@megamall.co.tz',
-            'ticker' => [
-                'Pay on delivery in Dar es Salaam',
-                'Delivery to all 31 regions of Tanzania',
-                'Pay with M-Pesa, Mixx by Yas, Airtel Money or HaloPesa',
-                'Call or WhatsApp: +255 700 000 000',
-            ],
             // Unpaid mobile money orders are cancelled after this many minutes and stock is released.
             'prepaid_order_expiry_minutes' => 60,
-            // Customers can request a return this many days after delivery.
+            // Returns accepted this many days after delivery (shown in the shop footer and on invoices).
             'return_window_days' => 7,
-            // false = staff approve each review before it is shown.
-            'auto_approve_reviews' => false,
-            // Shown at checkout and on order pages. The shop does not charge delivery.
-            'delivery_note' => 'Delivery is not included in our prices. In Dar es Salaam you pay the rider directly when your order arrives. For other regions we send your parcel by bus, and you pay the transport cost when you collect it.',
-            // Customer SMS (wording editable in Store settings) and staff alerts.
-            'sms_enabled' => true,
-            'sms_templates' => \App\Support\SmsTemplates::DEFAULTS,
+            // Printed at the bottom of invoices.
+            'delivery_note' => 'Delivery is free in Dar es Salaam. Other regions: we send your parcel by bus and you pay the bus fare when you collect it.',
+            // Staff alerts for new orders and payments to check.
             'staff_alert_emails' => '',
             // Staff phones that get a WhatsApp for each new order (CallMeBot), set under Store settings.
             'staff_whatsapp' => [],
@@ -40,8 +30,7 @@ class SettingSeeder extends Seeder
             // Reorder list: re-order at this stock level, and buy enough for this many days of sales.
             'low_stock_level' => 5,
             'reorder_cover_days' => 30,
-            // Upcountry orders: "lipa_namba" (customers pay to your till number, staff confirm) or "automatic" (AzamPay).
-            'payment_method' => \App\Support\LipaNamba::METHOD,
+            // Upcountry orders are paid to these till numbers; staff confirm each payment.
             'lipa_numbers' => [],
             'lipa_note' => \App\Support\LipaNamba::DEFAULT_NOTE,
             // Shop colours, changed under Store settings > Website colours.

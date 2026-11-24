@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Refund extends Model
 {
-    protected $fillable = ['order_id', 'return_request_id', 'amount', 'method', 'reference', 'note', 'user_id'];
+    protected $fillable = ['order_id', 'amount', 'method', 'reference', 'note', 'user_id'];
 
     protected function casts(): array
     {
@@ -19,10 +19,6 @@ class Refund extends Model
         return $this->belongsTo(Order::class);
     }
 
-    public function returnRequest(): BelongsTo
-    {
-        return $this->belongsTo(ReturnRequest::class);
-    }
 
     public function user(): BelongsTo
     {

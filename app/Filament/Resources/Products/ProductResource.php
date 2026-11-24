@@ -83,7 +83,7 @@ class ProductResource extends Resource
                             ->maxLength(100),
                         Textarea::make('short_description')
                             ->label('Short description')
-                            ->helperText('One or two sentences shown on the product card.')
+                            ->helperText('One or two sentences, shown under the price on the product page and in the preview when the link is shared.')
                             ->rows(2)
                             ->maxLength(500)
                             ->columnSpanFull(),
@@ -112,7 +112,7 @@ class ProductResource extends Resource
                             ->label(fn (string $operation) => $operation === 'create' ? 'Opening stock' : 'Stock')
                             ->helperText(fn (string $operation) => $operation === 'create'
                                 ? 'How many you have now. If the product has sizes, set stock per size below instead.'
-                                : 'Change stock with Purchases, Damages or the Stock page, so every change is recorded.')
+                                : 'Change stock on the Stock page (Add stock or Count correction), so every change is recorded.')
                             ->numeric()
                             ->minValue(0)
                             ->default(0)
@@ -127,7 +127,7 @@ class ProductResource extends Resource
                             ->minValue(0),
                         TextInput::make('cost_price')
                             ->label('Cost price (what you pay)')
-                            ->helperText('Updated automatically by each purchase. Only staff see this.')
+                            ->helperText('What you pay per item, for profit reports. Updated when you add stock with a cost. Only staff see this.')
                             ->prefix('TZS')
                             ->numeric()
                             ->minValue(0),

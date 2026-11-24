@@ -85,7 +85,7 @@
 
     <div class="parties">
         <div>
-            <div class="label">{{ $order->isPos() ? 'Customer' : 'Deliver to' }}</div>
+            <div class="label">Deliver to</div>
             <strong>{{ $order->customer_name }}</strong><br>
             @if ($order->phone) {{ \App\Support\Phone::display($order->phone) }}<br> @endif
             @if ($order->email) {{ $order->email }}<br> @endif
@@ -137,11 +137,9 @@
         @endif
     </table>
 
-    @unless ($order->isPos())
-        <div class="note">
-            {{ $store['delivery_note'] ?? 'Delivery is paid to the rider or bus company directly and is not included in this total.' }}
-        </div>
-    @endunless
+    @if (filled($store['delivery_note'] ?? null))
+        <div class="note">{{ $store['delivery_note'] }}</div>
+    @endif
 
     <div class="foot">
         Asante kwa kununua! Returns accepted within {{ (int) ($store['return_window_days'] ?? 7) }} days of delivery.

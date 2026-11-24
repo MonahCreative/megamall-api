@@ -51,13 +51,6 @@ class OrderResource extends JsonResource
                 'line_total' => $item->line_total,
             ]),
             'payment' => $latestPayment ? PaymentResource::make($latestPayment) : null,
-            'returns' => $this->returnRequests()->latest()->get()->map(fn ($return) => [
-                'return_number' => $return->return_number,
-                'status' => $return->status->value,
-                'status_label' => $return->status->getLabel(),
-                'refund_amount' => $return->refund_amount,
-                'created_at' => $return->created_at->toIso8601String(),
-            ]),
         ];
     }
 }

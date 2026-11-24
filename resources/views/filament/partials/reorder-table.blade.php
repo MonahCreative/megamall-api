@@ -20,7 +20,7 @@
                 <th class="num">Sold (30 days)</th>
                 <th class="num">Lasts</th>
                 <th class="num">Order</th>
-                <th>Last bought from</th>
+                <th class="num">Waiting</th>
                 @if ($showCost ?? true)
                     <th class="num">Est. cost</th>
                 @endif
@@ -56,7 +56,7 @@
                         @endif
                     </td>
                     <td class="num buy">{{ $row['suggested'] }}</td>
-                    <td>{{ $row['supplier'] ?? '–' }}</td>
+                    <td class="num">{{ $row['customers_waiting'] ?: '–' }}</td>
                     @if ($showCost ?? true)
                         <td class="num">{{ $row['estimated_cost'] ? \App\Support\Money::tzs($row['estimated_cost']) : '–' }}</td>
                     @endif

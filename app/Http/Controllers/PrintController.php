@@ -65,7 +65,7 @@ class PrintController extends Controller
     private function invoiceView(Order $order): View
     {
         return view('print.invoice', [
-            'order' => $order->load(['items', 'payments', 'region', 'district', 'refunds', 'servedBy']),
+            'order' => $order->load(['items', 'payments', 'region', 'district', 'refunds']),
             'store' => Setting::allValues(),
         ]);
     }

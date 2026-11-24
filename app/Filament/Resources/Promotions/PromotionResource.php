@@ -73,7 +73,6 @@ class PromotionResource extends Resource
                     ->relationship('categories', 'name')
                     ->multiple()
                     ->preload()
-                    ->helperText('Sub-categories are included automatically.')
                     ->visible(fn (Get $get) => $get('applies_to') === 'categories')
                     ->required(fn (Get $get) => $get('applies_to') === 'categories')
                     ->columnSpanFull(),

@@ -28,12 +28,10 @@ class PricingService
     public function bestPromotion(Product $product, ?int $basePrice = null): ?Promotion
     {
         $basePrice ??= $product->price;
-        $parentId = $product->relationLoaded('category') ? $product->category?->parent_id : $product->category()->value('parent_id');
-
         return $this->runningPromotions()
             ->filter(fn (Promotion $promotion) => match ($promotion->applies_to) {
                 'all' => true,
-                'categories' => $promotion->categories->pluck('id')->intersect(array_filter([$product->category_id, $parentId]))->isNotEmpty(),
+                'categories' => $promotion->categories->contains('id', $product->category_id),
                 default => $promotion->products->contains('id', $product->id),
             })
             ->sortBy(fn (Promotion $promotion) => $promotion->apply($basePrice))

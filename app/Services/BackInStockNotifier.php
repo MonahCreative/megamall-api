@@ -2,22 +2,23 @@
 
 namespace App\Services;
 
+use App\Filament\Resources\StockAlerts\StockAlertResource;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Models\Setting;
 use App\Models\StockAlert;
-use App\Services\Sms\SmsService;
 use App\Support\Phone;
-use App\Support\SmsTemplates;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
-/** "Notify me when back in stock": save requests, and SMS everyone waiting when stock returns. */
+use function Illuminate\Support\defer;
+
+/**
+ * "Tell me when it's back in stock": save the customer's number, and when stock returns
+ * send staff a WhatsApp with the numbers to contact. Staff then mark each request as contacted.
+ */
 class BackInStockNotifier
 {
-    public function __construct(private readonly SmsService $sms) {}
-
     public function request(Product $product, string $phone, ?int $variantId = null): StockAlert
     {
         $normalized = Phone::normalize($phone);
@@ -29,7 +30,7 @@ class BackInStockNotifier
         }
 
         $alert = StockAlert::firstOrNew(['product_id' => $product->id, 'product_variant_id' => $variantId, 'phone' => $normalized]);
-        $alert->notified_at = null; // asking again after an earlier SMS: wait for the next restock
+        $alert->notified_at = null; // asking again after being contacted: wait for the next restock
         $alert->save();
 
         return $alert;
@@ -40,30 +41,40 @@ class BackInStockNotifier
     {
         DB::afterCommit(function () use ($productId, $variantId) {
             try {
-                $this->send($productId, $variantId);
+                $text = $this->staffText($productId, $variantId);
+                if ($text) {
+                    defer(fn () => app(StaffWhatsApp::class)->sendToAll($text));
+                }
             } catch (Throwable $exception) {
-                report($exception); // a failed SMS must never undo a purchase or stock count
+                report($exception); // a failed alert must never undo a stock change
             }
         });
     }
 
-    private function send(int $productId, ?int $variantId): void
+    /** The WhatsApp text for staff, or null when nobody is waiting. */
+    public function staffText(int $productId, ?int $variantId): ?string
     {
         $product = Product::active()->find($productId);
-        if (! $product || ! Setting::getValue('sms_enabled', true)) {
-            return;
+        if (! $product) {
+            return null;
         }
         $variant = $variantId ? ProductVariant::find($variantId) : null;
 
-        // Someone who asked for "any size" is told when any size comes back; a size request only for that size.
-        $alerts = StockAlert::waiting()
+        // Someone who asked for "any size" is waiting for any size; a size request only for that size.
+        $phones = StockAlert::waiting()
             ->where('product_id', $productId)
             ->where(fn ($query) => $query->whereNull('product_variant_id')->when($variantId, fn ($inner) => $inner->orWhere('product_variant_id', $variantId)))
-            ->get();
+            ->pluck('phone');
 
-        foreach ($alerts as $alert) {
-            $this->sms->send('back_in_stock', $alert->phone, SmsTemplates::renderForProduct('back_in_stock', $product, $alert->variant ?? $variant));
-            $alert->update(['notified_at' => now()]);
+        if ($phones->isEmpty()) {
+            return null;
         }
+
+        return implode("\n", [
+            '*Back in stock* '.$product->name.($variant ? " ({$variant->name})" : ''),
+            $phones->count().' customer'.($phones->count() === 1 ? ' is' : 's are').' waiting. Please contact them:',
+            ...$phones->map(fn (string $phone) => Phone::display($phone))->all(),
+            StockAlertResource::getUrl('index', panel: 'admin'),
+        ]);
     }
 }

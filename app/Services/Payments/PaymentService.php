@@ -12,64 +12,13 @@ use App\Support\LipaNamba;
 use App\Support\Phone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use InvalidArgumentException;
 use Illuminate\Validation\ValidationException;
 
 class PaymentService
 {
-    public function gateway(?string $driver = null): MobileMoneyGateway
-    {
-        $driver ??= config('payments.driver');
-
-        if ($driver === 'fake' && app()->isProduction()) {
-            throw new InvalidArgumentException('The fake payment driver cannot be used on the live server. Set PAYMENT_DRIVER in .env.');
-        }
-
-        return match ($driver) {
-            'fake' => app(FakeGateway::class),
-            'azampay' => app(AzamPayGateway::class),
-            default => throw new InvalidArgumentException("Unknown payment driver [{$driver}]."),
-        };
-    }
-
-    /** Start a mobile money payment for a prepaid order. */
-    public function start(Order $order, string $channel, string $phone): Payment
-    {
-        if (! $order->needsPrepayment()) {
-            throw ValidationException::withMessages(['order' => 'This order does not need a mobile money payment.']);
-        }
-        if (LipaNamba::enabled()) {
-            throw ValidationException::withMessages(['order' => 'Please pay to our Lipa Namba and enter the transaction ID.']);
-        }
-        if ($order->status === OrderStatus::Cancelled) {
-            throw ValidationException::withMessages(['order' => 'This order was cancelled because it was not paid in time. Please order again.']);
-        }
-        if ($order->payments()->where('status', PaymentStatus::Pending)->where('created_at', '>', now()->subMinutes(2))->exists()) {
-            throw ValidationException::withMessages(['order' => 'A payment request was just sent. Check your phone and enter your PIN.']);
-        }
-
-        $payment = $order->payments()->create([
-            'gateway' => config('payments.driver'),
-            'channel' => $channel,
-            'phone' => Phone::normalize($phone),
-            'amount' => $order->total,
-            'status' => PaymentStatus::Pending,
-            'reference' => $order->order_number.'-'.strtoupper(Str::random(4)),
-        ]);
-
-        $this->gateway($payment->gateway)->initiate($payment);
-        $order->update(['payment_status' => PaymentStatus::Pending]);
-
-        return $payment->refresh();
-    }
-
-    /** Check the provider for news and apply it to the order. */
+    /** Apply the latest state of a payment to its order. Staff check Lipa Namba payments, so there is no provider to ask. */
     public function refresh(Payment $payment): Payment
     {
-        // Lipa Namba payments are checked by staff, so there is nobody to ask.
-        if ($payment->status === PaymentStatus::Pending && ! in_array($payment->gateway, [LipaNamba::GATEWAY, 'manual'], true)) {
-            $payment = $this->gateway($payment->gateway)->refresh($payment);
-        }
         $this->sync($payment);
 
         return $payment;
@@ -103,9 +52,6 @@ class PaymentService
      */
     public function submitLipaNamba(Order $order, string $channel, string $phone, string $transactionText): Payment
     {
-        if (! LipaNamba::enabled()) {
-            throw ValidationException::withMessages(['order' => 'Lipa Namba payments are switched off. Please refresh the page.']);
-        }
         $transactionId = LipaNamba::cleanTransactionId($transactionText);
         if (! $transactionId) {
             throw ValidationException::withMessages(['transaction_id' => 'Enter the transaction ID from the confirmation SMS, for example QJK3X7Y2AB.']);
@@ -160,11 +106,11 @@ class PaymentService
             'payload' => [...($payment->payload ?? []), 'checked_by' => $staffId, 'checked_at' => now()->toIso8601String()],
         ]);
 
-        // Staff did this themselves, so no "paid order" alert to staff; the customer gets the receipt SMS.
+        // Staff did this themselves, so no "paid order" alert to staff.
         $this->sync($payment, alertStaff: false);
     }
 
-    /** Staff could not find the money. The customer can send the right ID before the order times out. */
+    /** Staff could not find the money. Staff call the customer, who can send the right ID before the order times out. */
     public function rejectLipaNamba(Payment $payment, string $reason, ?int $staffId = null): void
     {
         $this->guardCheckable($payment);
@@ -182,8 +128,6 @@ class PaymentService
                 $order->update(['expires_at' => now()->addMinutes((int) Setting::getValue('prepaid_order_expiry_minutes', 60))]);
             }
         });
-
-        app(OrderNotifier::class)->paymentNotFound($payment->order()->first(), $payment, $reason);
     }
 
     private function guardCheckable(Payment $payment): void

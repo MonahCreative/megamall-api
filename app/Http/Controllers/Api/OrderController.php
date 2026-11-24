@@ -59,24 +59,6 @@ class OrderController extends Controller
         return OrderResource::make($this->findForBuyer($request, $number));
     }
 
-    /** POST /api/orders/{number}/pay — send the mobile money PIN prompt. */
-    public function pay(Request $request, string $number): JsonResponse
-    {
-        $data = $request->validate([
-            'token' => ['required', 'string'],
-            'channel' => ['required', Rule::in(array_keys(config('payments.channels')))],
-            'phone' => ['required', 'string', new TanzanianPhone],
-        ]);
-
-        $order = $this->findForBuyer($request, $number);
-        $this->payments->start($order, $data['channel'], $data['phone']);
-
-        return response()->json([
-            'data' => OrderResource::make($order->fresh(['items', 'region', 'district', 'payments'])),
-            'message' => 'Check your phone and enter your PIN to approve the payment.',
-        ]);
-    }
-
     /** POST /api/orders/{number}/lipa-namba — the customer paid to the shop's Lipa Namba and sends the transaction ID. */
     public function lipaNamba(Request $request, string $number): JsonResponse
     {
@@ -95,7 +77,7 @@ class OrderController extends Controller
 
         return response()->json([
             'data' => OrderResource::make($order->fresh(['items', 'region', 'district', 'payments'])),
-            'message' => 'Thank you. We are checking your payment and will SMS you once it is confirmed.',
+            'message' => 'Thank you. We are checking your payment and will call you to confirm your order.',
         ]);
     }
 

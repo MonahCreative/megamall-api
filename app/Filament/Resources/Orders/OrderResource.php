@@ -33,7 +33,7 @@ class OrderResource extends Resource
 {
     protected static ?string $model = Order::class;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Orders & POS';
+    protected static string | UnitEnum | null $navigationGroup = 'Orders';
 
     protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedShoppingBag;
 

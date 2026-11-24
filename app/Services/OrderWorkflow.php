@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentMode;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
+use App\Models\Refund;
 use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -58,7 +59,6 @@ class OrderWorkflow
     {
         $this->guard($this->canConfirm($order), 'Only new orders can be confirmed.');
         $order->update(['status' => OrderStatus::Confirmed]);
-        app(OrderNotifier::class)->confirmed($order);
     }
 
     public function pack(Order $order): void
@@ -76,7 +76,6 @@ class OrderWorkflow
             'This order must be paid before it is sent.',
         );
         $order->update(['status' => OrderStatus::Shipped, 'tracking_note' => $note ?: $order->tracking_note]);
-        app(OrderNotifier::class)->shipped($order);
     }
 
     /** Mark delivered. For pay-on-delivery orders, pass $cashCollected = true to record the payment too. */
@@ -86,19 +85,17 @@ class OrderWorkflow
 
         DB::transaction(function () use ($order, $cashCollected, $channel, $reference) {
             if ($cashCollected && ! $order->isPaid()) {
-                $this->recordPayment($order, $channel, $reference, notify: false);
+                $this->recordPayment($order, $channel, $reference);
             }
             $order->update(['status' => OrderStatus::Delivered, 'delivered_at' => now()]);
         });
-
-        app(OrderNotifier::class)->delivered($order);
     }
 
     /**
-     * Record money received outside the automatic gateway:
-     * cash to the rider, or a customer who paid to your Lipa number directly.
+     * Record money received by hand: cash to the rider, or a customer who paid to the Lipa Namba
+     * without sending the transaction ID through the shop.
      */
-    public function recordPayment(Order $order, string $channel, ?string $reference = null, bool $notify = true): void
+    public function recordPayment(Order $order, string $channel, ?string $reference = null): void
     {
         $this->guard($this->canRecordPayment($order), 'This order is already paid or cancelled.');
 
@@ -108,7 +105,7 @@ class OrderWorkflow
             throw ValidationException::withMessages(['reference' => "Transaction ID {$reference} was already used for order {$used->order?->order_number}."]);
         }
 
-        DB::transaction(function () use ($order, $channel, $reference, $notify) {
+        DB::transaction(function () use ($order, $channel, $reference) {
             $order->payments()->create([
                 'gateway' => 'manual',
                 'channel' => $channel,
@@ -126,11 +123,38 @@ class OrderWorkflow
                 'expires_at' => null,
                 'status' => $order->status === OrderStatus::AwaitingPayment ? OrderStatus::Confirmed : $order->status,
             ]);
+        });
+    }
 
-            if ($notify) {
-                // Staff recorded it themselves, so no staff alert; the customer gets a receipt SMS.
-                app(OrderNotifier::class)->paymentReceived($order, alertStaff: false);
+    /** Paid orders that can still be refunded: cancelled after payment, or delivered and (partly) returned. */
+    public function canRefund(Order $order): bool
+    {
+        return in_array($order->status, [OrderStatus::Cancelled, OrderStatus::Delivered], true)
+            && ($order->isPaid() || $order->payment_status === PaymentStatus::Refunded)
+            && $order->refundedAmount() < $order->total;
+    }
+
+    /** Record money given back to the customer. Fully refunded orders are marked "Refunded". */
+    public function refund(Order $order, int $amount, string $method, ?string $reference = null, ?string $note = null): Refund
+    {
+        $this->guard($this->canRefund($order), 'Only paid orders that were cancelled or delivered can be refunded.');
+        $left = $order->total - $order->refundedAmount();
+        $this->guard($amount > 0 && $amount <= $left, 'You can refund at most TZS '.number_format($left).' on this order.');
+
+        return DB::transaction(function () use ($order, $amount, $method, $reference, $note) {
+            $refund = $order->refunds()->create([
+                'amount' => $amount,
+                'method' => $method,
+                'reference' => $reference,
+                'note' => $note,
+                'user_id' => auth()->id(),
+            ]);
+
+            if ($order->refundedAmount() >= $order->total) {
+                $order->update(['payment_status' => PaymentStatus::Refunded]);
             }
+
+            return $refund;
         });
     }
 

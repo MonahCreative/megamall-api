@@ -7,6 +7,7 @@ use App\Filament\Resources\StockMovements\StockMovementResource;
 use App\Filament\Support\Attempt;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\InventoryService;
 use App\Services\StockService;
 use App\Support\Money;
 use BackedEnum;
@@ -24,7 +25,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use UnitEnum;
 
-/** Stock levels for every product, with a "count correction" button. Same products as the Products page. */
+/** Stock levels for every product, with "Add stock" for new goods and "Count correction" after a shelf count. */
 class StockResource extends Resource
 {
     protected static ?string $model = Product::class;
@@ -88,6 +89,7 @@ class StockResource extends Resource
                         ->orWhereHas('variants', fn ($variants) => $variants->where('stock', '<', 5)))),
             ])
             ->recordActions([
+                static::receiveAction(),
                 static::adjustAction(),
                 Action::make('history')
                     ->label('History')
@@ -95,6 +97,48 @@ class StockResource extends Resource
                     ->color('gray')
                     ->url(fn (Product $record) => StockMovementResource::getUrl('index', ['search' => $record->name])),
             ]);
+    }
+
+    /** New goods arrived from a supplier, or a customer returned an item in good condition. */
+    public static function receiveAction(): Action
+    {
+        return Action::make('receive')
+            ->label('Add stock')
+            ->icon(Heroicon::OutlinedPlusCircle)
+            ->color('success')
+            ->modalHeading(fn (Product $record) => "Add stock: {$record->name}")
+            ->modalDescription('For goods that arrived, or an item a customer returned in good condition. It is recorded in the stock history.')
+            ->schema(fn (Product $record) => [
+                Select::make('product_variant_id')
+                    ->label('Size / option')
+                    ->options($record->variants->mapWithKeys(fn (ProductVariant $variant) => [$variant->id => "{$variant->name} (now {$variant->stock})"]))
+                    ->visible($record->variants->isNotEmpty())
+                    ->required($record->variants->isNotEmpty()),
+                TextInput::make('quantity')
+                    ->label('How many arrived')
+                    ->numeric()
+                    ->minValue(1)
+                    ->required(),
+                TextInput::make('unit_cost')
+                    ->label('Cost each (optional)')
+                    ->helperText('What you paid per item. Leave empty to keep the current cost price.')
+                    ->prefix('TZS')
+                    ->numeric()
+                    ->minValue(0),
+                TextInput::make('note')->label('Note')->placeholder('From supplier / Customer return, order MM-1234'),
+            ])
+            ->action(function (Product $record, array $data, Action $action) {
+                Attempt::run($action, function () use ($record, $data) {
+                    app(InventoryService::class)->receiveStock(
+                        $record,
+                        filled($data['product_variant_id'] ?? null) ? (int) $data['product_variant_id'] : null,
+                        (int) $data['quantity'],
+                        filled($data['unit_cost'] ?? null) ? (int) $data['unit_cost'] : null,
+                        $data['note'] ?? null,
+                    );
+                    Notification::make()->success()->title('Added '.(int) $data['quantity'].' to stock')->send();
+                });
+            });
     }
 
     public static function adjustAction(): Action

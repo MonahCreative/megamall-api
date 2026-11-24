@@ -7,15 +7,12 @@ use App\Models\Category;
 use BackedEnum;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
@@ -51,24 +48,11 @@ class CategoryResource extends Resource
                     ->label('Web address')
                     ->required()
                     ->unique(ignoreRecord: true),
-                Select::make('parent_id')
-                    ->label('Inside category (optional)')
-                    ->helperText('Choose a parent to make this a sub-category, e.g. "Men\'s Shoes" inside "Fashion".')
-                    ->relationship('parent', 'name', fn (Builder $query) => $query->whereNull('parent_id'))
-                    ->searchable()
-                    ->preload(),
                 TextInput::make('sort_order')
                     ->label('Position')
-                    ->helperText('Lower numbers show first.')
+                    ->helperText('Order of the category chips in the shop: lower numbers show first. You can also drag rows in the list.')
                     ->numeric()
                     ->default(0),
-                FileUpload::make('image')
-                    ->label('Category image')
-                    ->image()
-                    ->disk('public')
-                    ->directory('categories')
-                    ->visibility('public')
-                    ->maxSize(2048),
                 Toggle::make('is_active')
                     ->label('Visible in shop')
                     ->default(true),
@@ -78,14 +62,11 @@ class CategoryResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->with('parent')->withCount('products'))
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount('products'))
             ->defaultSort('sort_order')
             ->reorderable('sort_order')
             ->columns([
-                ImageColumn::make('image')->label('')->disk('public')->square(),
-                TextColumn::make('name')
-                    ->searchable()
-                    ->description(fn (Category $record) => $record->parent ? 'in '.$record->parent->name : null),
+                TextColumn::make('name')->searchable(),
                 TextColumn::make('products_count')->label('Products')->badge(),
                 ToggleColumn::make('is_active')->label('Visible'),
             ])

@@ -11,7 +11,7 @@ use Filament\Support\Icons\Heroicon;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use UnitEnum;
 
-/** Everything that needs re-ordering, with suggested quantities, to take to suppliers. */
+/** Everything that needs re-ordering, with suggested quantities and how many customers are waiting. */
 class ReorderReport extends Page
 {
     protected string $view = 'filament.pages.reorder-report';
@@ -54,10 +54,10 @@ class ReorderReport extends Page
 
         return Spreadsheet::download('mega-mall-reorder-list-'.now()->format('Y-m-d').'.xlsx', [
             'Reorder list' => [
-                ['Product', 'Category', 'In stock', 'Reorder level', 'Sold in 30 days', 'Days left', 'Suggested order', 'Customers waiting', 'Last supplier', 'Last unit cost (TZS)', 'Estimated cost (TZS)'],
+                ['Product', 'Category', 'In stock', 'Reorder level', 'Sold in 30 days', 'Days left', 'Suggested order', 'Customers waiting', 'Cost each (TZS)', 'Estimated cost (TZS)'],
                 array_map(fn (array $row) => [
                     $row['name'], $row['category'], $row['stock'], $row['level'], $row['sold_30_days'], $row['days_left'] ?? '',
-                    $row['suggested'], $row['customers_waiting'], $row['supplier'] ?? '', $row['last_cost'] ?? '', $row['estimated_cost'],
+                    $row['suggested'], $row['customers_waiting'], $row['last_cost'] ?? '', $row['estimated_cost'],
                 ], $rows),
             ],
         ]);

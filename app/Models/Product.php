@@ -65,11 +65,6 @@ class Product extends Model
         return $this->hasMany(ProductVariant::class);
     }
 
-    public function reviews(): HasMany
-    {
-        return $this->hasMany(Review::class);
-    }
-
     public function promotions(): BelongsToMany
     {
         return $this->belongsToMany(Promotion::class);
@@ -87,13 +82,6 @@ class Product extends Model
         $active = $variants->where('is_active', true);
 
         return $active->isNotEmpty() ? (int) $active->sum('stock') : (int) $this->stock;
-    }
-
-    /** Adds `rating` (average of published reviews) and `review_count` to each product. */
-    public function scopeWithRatings(Builder $query): void
-    {
-        $query->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
-            ->withCount(['reviews as review_count' => fn ($reviews) => $reviews->where('status', 'approved')]);
     }
 
     public function scopeActive(Builder $query): void

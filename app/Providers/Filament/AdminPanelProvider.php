@@ -45,7 +45,7 @@ class AdminPanelProvider extends PanelProvider
             ->font('Outfit')
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([
-                NavigationGroup::make('Orders & POS'),
+                NavigationGroup::make('Orders'),
                 NavigationGroup::make('Reports'),
                 NavigationGroup::make('Products & Stock'),
                 NavigationGroup::make('Promo'),

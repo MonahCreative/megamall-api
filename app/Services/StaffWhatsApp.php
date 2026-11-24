@@ -6,7 +6,6 @@ use App\Enums\PaymentMode;
 use App\Filament\Resources\Orders\OrderResource;
 use App\Models\Order;
 use App\Models\Setting;
-use App\Support\LipaNamba;
 use App\Support\Money;
 use App\Support\Phone;
 use Illuminate\Support\Facades\DB;
@@ -43,7 +42,7 @@ class StaffWhatsApp
     /** Called when an order needs staff attention. Sends once the order is saved, after the customer's page is done. */
     public function notifyOrder(Order $order): void
     {
-        if ($order->isPos() || $this->recipients() === []) {
+        if ($this->recipients() === []) {
             return;
         }
 
@@ -68,7 +67,7 @@ class StaffWhatsApp
             '',
             '*Total: '.Money::tzs($order->total).'*'.match (true) {
                 $cod => ' · pay on delivery',
-                $waiting => ' · waiting for '.(LipaNamba::enabled() ? 'Lipa Namba ' : '').'payment',
+                $waiting => ' · waiting for Lipa Namba payment',
                 default => ' · paid, ready to send',
             },
             OrderResource::getUrl('view', ['record' => $order], panel: 'admin'),

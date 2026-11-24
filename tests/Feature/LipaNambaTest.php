@@ -10,7 +10,6 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Region;
 use App\Models\Setting;
-use App\Models\SmsMessage;
 use App\Models\User;
 use App\Notifications\NewOrderForStaff;
 use App\Notifications\PaymentToCheckForStaff;
@@ -63,7 +62,7 @@ class LipaNambaTest extends TestCase
         ]);
     }
 
-    public function test_shop_shows_the_lipa_namba_and_the_pin_prompt_is_off(): void
+    public function test_shop_shows_the_lipa_namba_and_there_is_no_pin_prompt(): void
     {
         $this->getJson('/api/store')
             ->assertJsonPath('payment_method', 'lipa_namba')
@@ -73,11 +72,8 @@ class LipaNambaTest extends TestCase
 
         $order = $this->upcountryOrder();
 
-        // The "order placed" SMS tells the customer where to pay.
-        $this->assertStringContainsString('Pay to M-Pesa Lipa Namba 5123456 (MEGA MALL TANZANIA).', SmsMessage::where('event', 'order_placed_prepaid')->sole()->body);
-
         $this->postJson("/api/orders/{$order->order_number}/pay", ['token' => $order->access_token, 'channel' => 'mpesa', 'phone' => '0754000111'])
-            ->assertUnprocessable();
+            ->assertNotFound();
         $this->assertSame(0, Payment::count());
     }
 
@@ -136,7 +132,6 @@ class LipaNambaTest extends TestCase
         $payment = Payment::sole();
         $this->assertSame('paid', $payment->status->value);
         $this->assertSame($this->admin->id, $payment->payload['checked_by']);
-        $this->assertSame(1, SmsMessage::where('event', 'payment_received')->count());
         Notification::assertSentOnDemandTimes(NewOrderForStaff::class, 1); // only when placed: staff confirmed it themselves
 
         $this->get('/admin/orders?tab=payment_to_check')->assertOk()->assertDontSee($order->order_number);
@@ -155,17 +150,12 @@ class LipaNambaTest extends TestCase
         $order->refresh();
         $this->assertSame('failed', $order->payment_status->value);
         $this->assertNotNull($order->expires_at); // the payment window starts again
-        $sms = SmsMessage::where('event', 'payment_not_found')->sole();
-        $this->assertStringContainsString('QJK3X7Y2AB', $sms->body);
-        $this->assertStringContainsString('no payment with this transaction ID', $sms->body);
 
         $this->getJson("/api/orders/{$order->order_number}?token={$order->access_token}")
             ->assertJsonPath('data.payment.status', 'failed')
             ->assertJsonPath('data.payment.failure_reason', 'no payment with this transaction ID');
 
-        $this->assertStringContainsString("/track?order={$order->order_number}", $sms->body);
-
-        // The SMS link opens Track order; number + phone unlock paying from there.
+        // Staff call the customer; on Track order, number + phone unlock paying again.
         $this->postJson('/api/orders/track', ['order_number' => $order->order_number, 'phone' => '0687441350'])
             ->assertOk()
             ->assertJsonPath('data.access_token', $order->access_token);
@@ -179,7 +169,6 @@ class LipaNambaTest extends TestCase
         $this->actingAs($this->admin);
 
         Livewire::test(StoreSettings::class)
-            ->assertFormSet(['payment_method' => 'lipa_namba'])
             ->fillForm([
                 'lipa_numbers' => [
                     ['channel' => 'mpesa', 'number' => '5123456', 'name' => 'MEGA MALL TANZANIA'],
@@ -192,18 +181,10 @@ class LipaNambaTest extends TestCase
         $this->assertCount(2, LipaNamba::accounts());
         $this->assertSame('Mixx by Yas', LipaNamba::accounts()[1]['label']);
 
-        // Switching to automatic keeps the numbers for later.
-        Livewire::test(StoreSettings::class)
-            ->fillForm(['payment_method' => 'automatic'])
-            ->call('save')
-            ->assertHasNoFormErrors();
-
-        $this->assertSame('automatic', LipaNamba::method());
-        $this->assertCount(2, LipaNamba::accounts());
-        $this->getJson('/api/store')->assertJsonPath('payment_method', 'automatic')->assertJsonCount(0, 'lipa_numbers');
+        $this->getJson('/api/store')->assertJsonPath('payment_method', 'lipa_namba')->assertJsonCount(2, 'lipa_numbers');
 
         Livewire::test(StoreSettings::class)
-            ->fillForm(['payment_method' => 'lipa_namba', 'lipa_numbers' => [['channel' => 'mpesa', 'number' => '51 23', 'name' => 'X']]])
+            ->fillForm(['lipa_numbers' => [['channel' => 'mpesa', 'number' => '51 23', 'name' => 'X']]])
             ->call('save')
             ->assertHasFormErrors();
     }
@@ -217,9 +198,9 @@ class LipaNambaTest extends TestCase
         $this->assertNull(LipaNamba::cleanTransactionId('12'));
     }
 
-    public function test_unknown_callback_drivers_are_not_found(): void
+    public function test_payment_provider_callbacks_are_gone(): void
     {
-        $this->postJson('/api/payments/callback/lipa_namba', ['anything' => 1])->assertNotFound();
+        $this->postJson('/api/payments/callback/azampay', ['anything' => 1])->assertNotFound();
         $this->postJson('/api/payments/callback/fake', [])->assertNotFound();
     }
 
@@ -243,7 +224,6 @@ class LipaNambaTest extends TestCase
         $this->assertTrue($order->isPaid());
         $this->assertSame('confirmed', $order->status->value);
         $this->assertSame('QJK3X7Y2AB', Payment::sole()->external_id);
-        $this->assertSame(1, SmsMessage::where('event', 'payment_received')->count());
 
         // The same mobile money payment cannot pay a second order.
         $other = $this->upcountryOrder();
@@ -262,6 +242,5 @@ class LipaNambaTest extends TestCase
         ])->assertCreated()->assertJsonPath('data.payment_mode', 'cod');
 
         Notification::assertSentOnDemandTimes(NewOrderForStaff::class, 1);
-        $this->assertSame(1, SmsMessage::where('event', 'order_placed_cod')->count());
     }
 }
